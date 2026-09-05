@@ -15,6 +15,7 @@
 | `POST /api/v1/auctions` | создать аукцион |
 | `GET /api/v1/auctions/{id}` | получить аукцион |
 | `POST /api/v1/auctions/{id}/lots` | добавить лот |
+| `GET /api/v1/auctions/{id}/lots` | получить список лотов аукциона |
 | `GET /api/v1/lots/{id}` | получить лот |
 | `POST /api/v1/auctions/{id}/open` | открыть аукцион |
 | `POST /api/v1/auctions/{id}/close` | закрыть аукцион |
