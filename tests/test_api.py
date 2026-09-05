@@ -160,3 +160,45 @@ def test_close_marks_unsold_lot(client: TestClient) -> None:
     client.post(f"/api/v1/auctions/{auction['id']}/close")
 
     assert client.get(f"/api/v1/lots/{lot['id']}").json()["status"] == "UNSOLD"
+
+
+def test_list_auction_lots(client: TestClient) -> None:
+    seller = create_seller(client)
+    auction = create_auction(client)
+    auction_id = auction["id"]
+
+    empty_response = client.get(f"/api/v1/auctions/{auction_id}/lots")
+    assert empty_response.status_code == 200
+    assert empty_response.json() == []
+
+    first_response = client.post(
+        f"/api/v1/auctions/{auction_id}/lots",
+        json={
+            "seller_id": seller["id"],
+            "title": "Картина",
+            "starting_price": "100.00",
+        },
+    )
+    assert first_response.status_code == 201
+
+    second_response = client.post(
+        f"/api/v1/auctions/{auction_id}/lots",
+        json={
+            "seller_id": seller["id"],
+            "title": "Ваза",
+            "starting_price": "250.00",
+        },
+    )
+    assert second_response.status_code == 201
+
+    response = client.get(f"/api/v1/auctions/{auction_id}/lots")
+    assert response.status_code == 200
+    assert [lot["title"] for lot in response.json()] == ["Картина", "Ваза"]
+
+    unknown_response = client.get("/api/v1/auctions/999/lots")
+    assert unknown_response.status_code == 404
+    assert unknown_response.json()["error"]["code"] == "AUCTION_NOT_FOUND"
+
+    openapi = client.get("/openapi.json").json()
+    path = "/api/v1/auctions/{auction_id}/lots"
+    assert "get" in openapi["paths"][path]
