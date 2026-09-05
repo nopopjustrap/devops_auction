@@ -177,6 +177,25 @@ def get_lot(connection: sqlite3.Connection, lot_id: int | None) -> dict[str, Any
     return _lot_from_row(row)
 
 
+def list_auction_lots(
+    connection: sqlite3.Connection,
+    auction_id: int,
+) -> list[dict[str, Any]]:
+    get_auction(connection, auction_id)
+
+    rows = connection.execute(
+        """
+        SELECT *
+        FROM lots
+        WHERE auction_id = ?
+        ORDER BY id
+        """,
+        (auction_id,),
+    ).fetchall()
+
+    return [_lot_from_row(row) for row in rows]
+
+
 def open_auction(connection: sqlite3.Connection, auction_id: int) -> dict[str, Any]:
     connection.execute("BEGIN IMMEDIATE")
     auction = get_auction(connection, auction_id)

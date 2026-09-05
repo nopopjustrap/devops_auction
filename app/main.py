@@ -184,6 +184,17 @@ def register_routes(application: FastAPI) -> None:
     ) -> dict[str, Any]:
         return services.create_lot(database, auction_id, data)
 
+    @application.get(
+        "/api/v1/auctions/{auction_id}/lots",
+        response_model=list[LotOut],
+        tags=["lots"],
+    )
+    def list_auction_lots(
+        auction_id: int,
+        database: Database,
+    ) -> list[dict[str, Any]]:
+        return services.list_auction_lots(database, auction_id)
+
     @application.get("/api/v1/lots/{lot_id}", response_model=LotOut, tags=["lots"])
     def get_lot(lot_id: int, database: Database) -> dict[str, Any]:
         return services.get_lot(database, lot_id)
