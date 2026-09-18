@@ -10,6 +10,23 @@ class ApiModel(BaseModel):
     model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
 
 
+class AuthCredentials(ApiModel):
+    username: str = Field(min_length=3, max_length=50, pattern=r"^[\w.-]+$")
+    password: str = Field(min_length=8, max_length=128)
+
+
+class UserOut(ApiModel):
+    id: int
+    username: str
+    role: str
+    is_active: bool
+    created_at: datetime
+
+
+class AuthStatusOut(ApiModel):
+    registration_open: bool
+
+
 class ParticipantCreate(ApiModel):
     name: str = Field(min_length=2, max_length=100)
     email: str = Field(min_length=5, max_length=254)

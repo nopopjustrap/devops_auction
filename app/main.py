@@ -4,18 +4,23 @@ import os
 import sqlite3
 from collections.abc import Generator
 from contextlib import asynccontextmanager
+from pathlib import Path
 from typing import Annotated, Any
 
-from fastapi import Depends, FastAPI, Query, Request, status
+from fastapi import Depends, FastAPI, Query, Request, Response, Security, status
 from fastapi.encoders import jsonable_encoder
 from fastapi.exceptions import RequestValidationError
-from fastapi.responses import JSONResponse
+from fastapi.responses import FileResponse, JSONResponse
+from fastapi.security import APIKeyCookie
+from fastapi.staticfiles import StaticFiles
 
-from app import services
+from app import auth, services
 from app.db import connect, database_path_from_env, init_db
 from app.schemas import (
     AuctionCreate,
     AuctionOut,
+    AuthCredentials,
+    AuthStatusOut,
     LotCreate,
     LotOut,
     ParticipantCreate,
@@ -23,8 +28,43 @@ from app.schemas import (
     RevenueReportOut,
     SaleCreate,
     SaleOut,
+    UserOut,
 )
 from app.services import DomainError
+
+APP_VERSION = "0.1.1"
+SESSION_COOKIE_NAME = "auction_session"
+STATIC_DIRECTORY = Path(__file__).resolve().parent / "static"
+session_cookie = APIKeyCookie(
+    name=SESSION_COOKIE_NAME,
+    scheme_name="SessionCookie",
+    auto_error=False,
+)
+
+
+def _positive_int_from_env(name: str, default: int) -> int:
+    raw_value = os.getenv(name)
+    if raw_value is None or not raw_value.strip():
+        return default
+    try:
+        value = int(raw_value)
+    except ValueError as error:
+        raise RuntimeError(f"{name} должен быть целым числом") from error
+    if value <= 0:
+        raise RuntimeError(f"{name} должен быть больше нуля")
+    return value
+
+
+def _boolean_from_env(name: str, default: bool) -> bool:
+    raw_value = os.getenv(name)
+    if raw_value is None or not raw_value.strip():
+        return default
+    normalized = raw_value.strip().lower()
+    if normalized in {"1", "true", "yes", "on"}:
+        return True
+    if normalized in {"0", "false", "no", "off"}:
+        return False
+    raise RuntimeError(f"{name} должен иметь значение true или false")
 
 
 def create_app(database_path: str | None = None) -> FastAPI:
@@ -37,11 +77,21 @@ def create_app(database_path: str | None = None) -> FastAPI:
 
     application = FastAPI(
         title=os.getenv("APP_NAME") or "Auction Service",
-        version="0.1.0",
-        description="Учебный API для учёта аукционов, лотов и продаж.",
+        version=APP_VERSION,
+        description=(
+            "Учебная система управления аукционами, лотами и продажами. "
+            "Бизнес-операции доступны после входа оператора."
+        ),
         lifespan=lifespan,
     )
     application.state.database_path = selected_database_path
+    application.state.session_ttl_hours = _positive_int_from_env("SESSION_TTL_HOURS", 8)
+    application.state.cookie_secure = _boolean_from_env("COOKIE_SECURE", False)
+    application.mount(
+        "/static",
+        StaticFiles(directory=STATIC_DIRECTORY),
+        name="static",
+    )
 
     @application.exception_handler(DomainError)
     async def handle_domain_error(
@@ -106,9 +156,21 @@ def get_connection(request: Request) -> Generator[sqlite3.Connection, None, None
 
 
 Database = Annotated[sqlite3.Connection, Depends(get_connection)]
+SessionToken = Annotated[str | None, Security(session_cookie)]
+
+
+def get_current_user(database: Database, token: SessionToken) -> dict[str, Any]:
+    return auth.user_from_session(database, token)
+
+
+CurrentUser = Annotated[dict[str, Any], Depends(get_current_user)]
 
 
 def register_routes(application: FastAPI) -> None:
+    @application.get("/", include_in_schema=False, response_class=FileResponse)
+    def web_interface() -> FileResponse:
+        return FileResponse(STATIC_DIRECTORY / "index.html")
+
     @application.get("/health", tags=["service"])
     def health() -> dict[str, str]:
         return {"status": "ok"}
@@ -122,13 +184,90 @@ def register_routes(application: FastAPI) -> None:
             connection.close()
         return {"status": "ready"}
 
+    @application.get(
+        "/api/v1/auth/status",
+        response_model=AuthStatusOut,
+        tags=["authentication"],
+    )
+    def auth_status(database: Database) -> dict[str, bool]:
+        return {"registration_open": auth.registration_is_open(database)}
+
+    @application.post(
+        "/api/v1/auth/register",
+        response_model=UserOut,
+        status_code=status.HTTP_201_CREATED,
+        tags=["authentication"],
+    )
+    def register_user(
+        credentials: AuthCredentials,
+        database: Database,
+    ) -> dict[str, Any]:
+        return auth.register_first_user(database, credentials)
+
+    @application.post(
+        "/api/v1/auth/login",
+        response_model=UserOut,
+        tags=["authentication"],
+    )
+    def login(
+        credentials: AuthCredentials,
+        request: Request,
+        response: Response,
+        database: Database,
+    ) -> dict[str, Any]:
+        ttl_hours = request.app.state.session_ttl_hours
+        token, user = auth.create_session(database, credentials, ttl_hours)
+        response.set_cookie(
+            key=SESSION_COOKIE_NAME,
+            value=token,
+            max_age=ttl_hours * 60 * 60,
+            httponly=True,
+            secure=request.app.state.cookie_secure,
+            samesite="lax",
+            path="/",
+        )
+        return user
+
+    @application.get(
+        "/api/v1/auth/me",
+        response_model=UserOut,
+        tags=["authentication"],
+    )
+    def current_user(user: CurrentUser) -> dict[str, Any]:
+        return user
+
+    @application.post(
+        "/api/v1/auth/logout",
+        status_code=status.HTTP_204_NO_CONTENT,
+        tags=["authentication"],
+    )
+    def logout(
+        request: Request,
+        database: Database,
+        token: SessionToken,
+    ) -> Response:
+        auth.delete_session(database, token)
+        response = Response(status_code=status.HTTP_204_NO_CONTENT)
+        response.delete_cookie(
+            key=SESSION_COOKIE_NAME,
+            httponly=True,
+            secure=request.app.state.cookie_secure,
+            samesite="lax",
+            path="/",
+        )
+        return response
+
     @application.post(
         "/api/v1/sellers",
         response_model=ParticipantOut,
         status_code=status.HTTP_201_CREATED,
         tags=["participants"],
     )
-    def create_seller(data: ParticipantCreate, database: Database) -> dict[str, Any]:
+    def create_seller(
+        data: ParticipantCreate,
+        database: Database,
+        _user: CurrentUser,
+    ) -> dict[str, Any]:
         return services.create_participant(database, "sellers", data)
 
     @application.get(
@@ -136,7 +275,11 @@ def register_routes(application: FastAPI) -> None:
         response_model=ParticipantOut,
         tags=["participants"],
     )
-    def get_seller(seller_id: int, database: Database) -> dict[str, Any]:
+    def get_seller(
+        seller_id: int,
+        database: Database,
+        _user: CurrentUser,
+    ) -> dict[str, Any]:
         return services.get_participant(database, "sellers", seller_id)
 
     @application.post(
@@ -145,7 +288,11 @@ def register_routes(application: FastAPI) -> None:
         status_code=status.HTTP_201_CREATED,
         tags=["participants"],
     )
-    def create_buyer(data: ParticipantCreate, database: Database) -> dict[str, Any]:
+    def create_buyer(
+        data: ParticipantCreate,
+        database: Database,
+        _user: CurrentUser,
+    ) -> dict[str, Any]:
         return services.create_participant(database, "buyers", data)
 
     @application.get(
@@ -153,7 +300,11 @@ def register_routes(application: FastAPI) -> None:
         response_model=ParticipantOut,
         tags=["participants"],
     )
-    def get_buyer(buyer_id: int, database: Database) -> dict[str, Any]:
+    def get_buyer(
+        buyer_id: int,
+        database: Database,
+        _user: CurrentUser,
+    ) -> dict[str, Any]:
         return services.get_participant(database, "buyers", buyer_id)
 
     @application.post(
@@ -162,7 +313,11 @@ def register_routes(application: FastAPI) -> None:
         status_code=status.HTTP_201_CREATED,
         tags=["auctions"],
     )
-    def create_auction(data: AuctionCreate, database: Database) -> dict[str, Any]:
+    def create_auction(
+        data: AuctionCreate,
+        database: Database,
+        _user: CurrentUser,
+    ) -> dict[str, Any]:
         return services.create_auction(database, data)
 
     @application.get(
@@ -170,7 +325,11 @@ def register_routes(application: FastAPI) -> None:
         response_model=AuctionOut,
         tags=["auctions"],
     )
-    def get_auction(auction_id: int, database: Database) -> dict[str, Any]:
+    def get_auction(
+        auction_id: int,
+        database: Database,
+        _user: CurrentUser,
+    ) -> dict[str, Any]:
         return services.get_auction(database, auction_id)
 
     @application.post(
@@ -180,7 +339,10 @@ def register_routes(application: FastAPI) -> None:
         tags=["lots"],
     )
     def create_lot(
-        auction_id: int, data: LotCreate, database: Database
+        auction_id: int,
+        data: LotCreate,
+        database: Database,
+        _user: CurrentUser,
     ) -> dict[str, Any]:
         return services.create_lot(database, auction_id, data)
 
@@ -192,11 +354,16 @@ def register_routes(application: FastAPI) -> None:
     def list_auction_lots(
         auction_id: int,
         database: Database,
+        _user: CurrentUser,
     ) -> list[dict[str, Any]]:
         return services.list_auction_lots(database, auction_id)
 
     @application.get("/api/v1/lots/{lot_id}", response_model=LotOut, tags=["lots"])
-    def get_lot(lot_id: int, database: Database) -> dict[str, Any]:
+    def get_lot(
+        lot_id: int,
+        database: Database,
+        _user: CurrentUser,
+    ) -> dict[str, Any]:
         return services.get_lot(database, lot_id)
 
     @application.post(
@@ -204,7 +371,11 @@ def register_routes(application: FastAPI) -> None:
         response_model=AuctionOut,
         tags=["auctions"],
     )
-    def open_auction(auction_id: int, database: Database) -> dict[str, Any]:
+    def open_auction(
+        auction_id: int,
+        database: Database,
+        _user: CurrentUser,
+    ) -> dict[str, Any]:
         return services.open_auction(database, auction_id)
 
     @application.post(
@@ -212,7 +383,11 @@ def register_routes(application: FastAPI) -> None:
         response_model=AuctionOut,
         tags=["auctions"],
     )
-    def close_auction(auction_id: int, database: Database) -> dict[str, Any]:
+    def close_auction(
+        auction_id: int,
+        database: Database,
+        _user: CurrentUser,
+    ) -> dict[str, Any]:
         return services.close_auction(database, auction_id)
 
     @application.post(
@@ -221,7 +396,11 @@ def register_routes(application: FastAPI) -> None:
         status_code=status.HTTP_201_CREATED,
         tags=["sales"],
     )
-    def create_sale(data: SaleCreate, database: Database) -> dict[str, Any]:
+    def create_sale(
+        data: SaleCreate,
+        database: Database,
+        _user: CurrentUser,
+    ) -> dict[str, Any]:
         return services.create_sale(database, data)
 
     @application.get(
@@ -231,6 +410,7 @@ def register_routes(application: FastAPI) -> None:
     )
     def revenue_report(
         database: Database,
+        _user: CurrentUser,
         auction_id: Annotated[int | None, Query(gt=0)] = None,
     ) -> dict[str, Any]:
         return services.revenue_report(database, auction_id)
