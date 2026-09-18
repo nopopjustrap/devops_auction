@@ -1,5 +1,23 @@
 PRAGMA foreign_keys = ON;
 
+CREATE TABLE IF NOT EXISTS users (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    username TEXT NOT NULL UNIQUE,
+    password_hash TEXT NOT NULL,
+    role TEXT NOT NULL DEFAULT 'OPERATOR'
+        CHECK (role IN ('OPERATOR')),
+    is_active INTEGER NOT NULL DEFAULT 1 CHECK (is_active IN (0, 1)),
+    created_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS sessions (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    token_hash TEXT NOT NULL UNIQUE,
+    expires_at TEXT NOT NULL,
+    created_at TEXT NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS sellers (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     name TEXT NOT NULL CHECK (length(name) BETWEEN 2 AND 100),
@@ -52,4 +70,5 @@ CREATE TABLE IF NOT EXISTS sales (
 CREATE INDEX IF NOT EXISTS idx_lots_auction_id ON lots(auction_id);
 CREATE INDEX IF NOT EXISTS idx_lots_seller_id ON lots(seller_id);
 CREATE INDEX IF NOT EXISTS idx_sales_buyer_id ON sales(buyer_id);
-
+CREATE INDEX IF NOT EXISTS idx_sessions_user_id ON sessions(user_id);
+CREATE INDEX IF NOT EXISTS idx_sessions_expires_at ON sessions(expires_at);

@@ -6,6 +6,8 @@ VENV_PIP := $(VENV)/bin/pip
 -include .env
 export APP_NAME
 export DATABASE_PATH
+export SESSION_TTL_HOURS
+export COOKIE_SECURE
 
 .PHONY: setup migrate run test quality verify clean
 
