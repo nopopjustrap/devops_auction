@@ -36,10 +36,8 @@ CREATE TABLE IF NOT EXISTS buyers (
     created_at TEXT NOT NULL
 );
 
--- Reference only. Apply migrations with make migrate.
 CREATE TABLE IF NOT EXISTS auctions (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
-    commission_bps INTEGER NOT NULL DEFAULT 0 CHECK (commission_bps BETWEEN 0 AND 10000),
     title TEXT NOT NULL CHECK (length(title) BETWEEN 2 AND 150),
     description TEXT,
     starts_at TEXT NOT NULL,
@@ -66,9 +64,7 @@ CREATE TABLE IF NOT EXISTS sales (
     lot_id INTEGER NOT NULL UNIQUE REFERENCES lots(id) ON DELETE RESTRICT,
     buyer_id INTEGER NOT NULL REFERENCES buyers(id) ON DELETE RESTRICT,
     final_price_kopecks INTEGER NOT NULL CHECK (final_price_kopecks > 0),
-    sold_at TEXT NOT NULL,
-    commission_kopecks INTEGER NOT NULL DEFAULT 0
-        CHECK (commission_kopecks >= 0 AND commission_kopecks <= final_price_kopecks)
+    sold_at TEXT NOT NULL
 );
 
 CREATE INDEX IF NOT EXISTS idx_lots_auction_id ON lots(auction_id);

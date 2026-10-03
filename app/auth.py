@@ -12,7 +12,7 @@ from typing import Any
 from app.schemas import AuthCredentials
 from app.services import DomainError
 
-PASSWORD_ALGORITHM = "pbkdf2_sha256"
+KDF_ALGORITHM = "pbkdf2_sha256"
 PASSWORD_ITERATIONS = 310_000
 
 
@@ -37,15 +37,13 @@ def hash_password(password: str) -> str:
     digest = hashlib.pbkdf2_hmac(
         "sha256", password.encode("utf-8"), salt, PASSWORD_ITERATIONS
     )
-    return (
-        f"{PASSWORD_ALGORITHM}${PASSWORD_ITERATIONS}${_encode(salt)}${_encode(digest)}"
-    )
+    return f"{KDF_ALGORITHM}${PASSWORD_ITERATIONS}${_encode(salt)}${_encode(digest)}"
 
 
 def verify_password(password: str, stored_hash: str) -> bool:
     try:
         algorithm, iterations, salt, expected_digest = stored_hash.split("$", 3)
-        if algorithm != PASSWORD_ALGORITHM:
+        if algorithm != KDF_ALGORITHM:
             return False
         digest = hashlib.pbkdf2_hmac(
             "sha256",

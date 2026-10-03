@@ -1,0 +1,16 @@
+{
+  "FR-01": ["tests/test_auth_and_ui.py::test_first_user_registration_login_and_logout"],
+  "FR-02": ["tests/test_auth_and_ui.py::test_first_user_registration_login_and_logout"],
+  "FR-03": ["tests/test_auth_and_ui.py::test_first_user_registration_login_and_logout"],
+  "FR-04": ["tests/test_auth_and_ui.py::test_business_api_requires_authentication"],
+  "FR-05": ["tests/test_lr3_api.py::test_read_participants_auction_and_empty_report"],
+  "FR-06": ["tests/test_lr3_api.py::test_read_participants_auction_and_empty_report"],
+  "FR-07": ["tests/test_api.py::test_list_auction_lots"],
+  "FR-08": ["tests/test_api.py::test_complete_sale_scenario", "tests/test_api.py::test_close_marks_unsold_lot"],
+  "FR-09": ["tests/test_api.py::test_complete_sale_scenario", "tests/test_lr3_api.py::test_two_concurrent_sales_have_one_winner"],
+  "FR-10": ["tests/test_api.py::test_complete_sale_scenario"],
+  "FR-11": [],
+  "FR-12": ["tests/test_api.py::test_validation_conflicts_and_health", "tests/test_lr3_api.py::test_lost_database_is_not_ready", "tests/test_lr3_api.py::test_missing_table_is_not_ready"],
+  "FR-13": ["tests/test_auth_and_ui.py::test_password_is_hashed_and_auth_is_described_in_openapi", "tests/test_api.py::test_list_auction_lots"],
+  "FR-14": ["tests/test_lr3_api.py::test_commission_sale_report_and_snapshot", "tests/test_lr3_api.py::test_sale_at_starting_price_and_rate_boundaries"]
+}

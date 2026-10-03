@@ -222,6 +222,8 @@ document.querySelector("#auction-form").addEventListener("submit", async (event)
   event.preventDefault();
   const form = event.currentTarget;
   const values = formValues(form);
+  values.commission_bps = Math.round(Number(values.commission_percent) * 100);
+  delete values.commission_percent;
   values.starts_at = new Date(values.starts_at).toISOString();
   values.ends_at = new Date(values.ends_at).toISOString();
   const payload = await submitOperation(

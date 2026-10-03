@@ -5,6 +5,7 @@ from datetime import UTC, datetime
 from decimal import Decimal
 from typing import Any
 
+from app.finance import commission_kopecks
 from app.schemas import AuctionCreate, LotCreate, ParticipantCreate, SaleCreate
 
 
@@ -57,7 +58,11 @@ def _lot_from_row(row: sqlite3.Row) -> dict[str, Any]:
 
 def _sale_from_row(row: sqlite3.Row) -> dict[str, Any]:
     result = dict(row)
-    result["final_price"] = _from_kopecks(result.pop("final_price_kopecks"))
+    price = result.pop("final_price_kopecks")
+    fee = result.pop("commission_kopecks")
+    result["final_price"] = _from_kopecks(price)
+    result["commission"] = _from_kopecks(fee)
+    result["seller_proceeds"] = _from_kopecks(price - fee)
     return result
 
 
@@ -71,7 +76,10 @@ def create_participant(
 
     try:
         cursor = connection.execute(
-            f"INSERT INTO {table} (name, email, phone, created_at) VALUES (?, ?, ?, ?)",
+            {
+                "sellers": "INSERT INTO sellers (name, email, phone, created_at) VALUES (?, ?, ?, ?)",
+                "buyers": "INSERT INTO buyers (name, email, phone, created_at) VALUES (?, ?, ?, ?)",
+            }[table],
             (data.name, data.email, data.phone, _now()),
         )
     except sqlite3.IntegrityError as error:
@@ -93,7 +101,11 @@ def get_participant(
         raise RuntimeError("SQLite did not return an inserted id")
 
     row = connection.execute(
-        f"SELECT * FROM {table} WHERE id = ?", (participant_id,)
+        {
+            "sellers": "SELECT * FROM sellers WHERE id = ?",
+            "buyers": "SELECT * FROM buyers WHERE id = ?",
+        }[table],
+        (participant_id,),
     ).fetchone()
     if row is None:
         raise _not_found(table[:-1].capitalize(), participant_id)
@@ -105,8 +117,8 @@ def create_auction(
 ) -> dict[str, Any]:
     cursor = connection.execute(
         """
-        INSERT INTO auctions (title, description, starts_at, ends_at, status, created_at)
-        VALUES (?, ?, ?, ?, 'DRAFT', ?)
+        INSERT INTO auctions (title, description, starts_at, ends_at, status, created_at, commission_bps)
+        VALUES (?, ?, ?, ?, 'DRAFT', ?, ?)
         """,
         (
             data.title,
@@ -114,6 +126,7 @@ def create_auction(
             data.starts_at.astimezone(UTC).isoformat(),
             data.ends_at.astimezone(UTC).isoformat(),
             _now(),
+            data.commission_bps,
         ),
     )
     return get_auction(connection, cursor.lastrowid)
@@ -269,10 +282,18 @@ def create_sale(connection: sqlite3.Connection, data: SaleCreate) -> dict[str, A
     try:
         cursor = connection.execute(
             """
-            INSERT INTO sales (lot_id, buyer_id, final_price_kopecks, sold_at)
-            VALUES (?, ?, ?, ?)
+            INSERT INTO sales (lot_id, buyer_id, final_price_kopecks, sold_at, commission_kopecks)
+            VALUES (?, ?, ?, ?, ?)
             """,
-            (data.lot_id, data.buyer_id, _to_kopecks(data.final_price), _now()),
+            (
+                data.lot_id,
+                data.buyer_id,
+                _to_kopecks(data.final_price),
+                _now(),
+                commission_kopecks(
+                    _to_kopecks(data.final_price), auction["commission_bps"]
+                ),
+            ),
         )
     except sqlite3.IntegrityError as error:
         raise DomainError(409, "LOT_ALREADY_SOLD", "Лот уже продан") from error
@@ -294,25 +315,25 @@ def revenue_report(
     connection: sqlite3.Connection,
     auction_id: int | None,
 ) -> dict[str, Any]:
-    parameters: tuple[int, ...] = ()
-    condition = ""
     if auction_id is not None:
         get_auction(connection, auction_id)
-        condition = "WHERE lots.auction_id = ?"
-        parameters = (auction_id,)
-
     row = connection.execute(
-        f"""
+        """
         SELECT COUNT(sales.id) AS sales_count,
-               COALESCE(SUM(sales.final_price_kopecks), 0) AS revenue_kopecks
+               COALESCE(SUM(sales.final_price_kopecks), 0) AS revenue_kopecks,
+               COALESCE(SUM(sales.commission_kopecks), 0) AS commission_kopecks
         FROM sales
         JOIN lots ON lots.id = sales.lot_id
-        {condition}
+        WHERE (? IS NULL OR lots.auction_id = ?)
         """,
-        parameters,
+        (auction_id, auction_id),
     ).fetchone()
     return {
         "auction_id": auction_id,
         "sales_count": row["sales_count"],
         "gross_revenue": _from_kopecks(row["revenue_kopecks"]),
+        "commission_revenue": _from_kopecks(row["commission_kopecks"]),
+        "seller_proceeds": _from_kopecks(
+            row["revenue_kopecks"] - row["commission_kopecks"]
+        ),
     }

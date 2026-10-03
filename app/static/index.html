@@ -168,6 +168,10 @@
             </div>
             <form id="auction-form" class="compact-form">
               <label>
+                Комиссия, %
+                <input name="commission_percent" type="number" min="0" max="100" step="0.01" value="0" required>
+              </label>
+              <label>
                 Название
                 <input name="title" minlength="2" maxlength="150" required>
               </label>

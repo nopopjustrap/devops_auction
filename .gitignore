@@ -9,3 +9,9 @@ __pycache__/
 htmlcov/
 .coverage
 
+reports/
+backups/
+*.db-*
+*.db.backup*
+*.db.before-restore-*
+.coverage.*
