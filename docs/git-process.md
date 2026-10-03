@@ -64,3 +64,12 @@ git push origin v0.1.1
 ```
 
 Тег `v0.1.0` остаётся неизменным и продолжает обозначать исходную версию.
+
+## ЛР3
+
+Задача [#7](https://github.com/nopopjustrap/devops_auction/issues/7), ветка
+`feature/lr3-verification-migrations-backup`. Функция комиссии, миграции и
+проверочный процесс проходят `make verify` до публикации PR.
+Результаты проверки находятся в [verification-lr3.md](verification-lr3.md).
+Новый релизный тег создаётся после согласования и слияния; v0.1.0/v0.1.1
+не перемещаются.

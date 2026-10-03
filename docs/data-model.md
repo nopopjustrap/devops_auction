@@ -54,3 +54,15 @@ erDiagram
 - `UNIQUE(sessions.token_hash)` запрещает дублирование токена;
 - `ON DELETE RESTRICT` защищает используемые бизнес-данные;
 - `ON DELETE CASCADE` удаляет сессии вместе с учётной записью.
+
+## Изменения схемы в ЛР3
+
+- Alembic 001: исходные семь таблиц v0.1.1.
+- Alembic 002: auctions.commission_bps INTEGER NOT NULL DEFAULT 0, CHECK 0..10000.
+- Alembic 003: sales.commission_kopecks INTEGER NOT NULL DEFAULT 0,
+  CHECK 0..final_price_kopecks.
+- alembic_version хранит применённую ревизию.
+
+Миграции — источник истины. migrations/baseline.sql неизменяем; schema.sql
+является справочным описанием. Исторические данные сохраняются, комиссия
+старых продаж равна 0. У новых продаж комиссия фиксируется транзакционно.
