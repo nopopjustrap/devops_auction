@@ -16,6 +16,7 @@ from fastapi.staticfiles import StaticFiles
 
 from app import auth, services
 from app.db import connect, database_path_from_env, init_db
+from app.migrate import check_schema
 from app.schemas import (
     AuctionCreate,
     AuctionOut,
@@ -32,7 +33,7 @@ from app.schemas import (
 )
 from app.services import DomainError
 
-APP_VERSION = "0.1.1"
+APP_VERSION = "0.2.0"
 SESSION_COOKIE_NAME = "auction_session"
 STATIC_DIRECTORY = Path(__file__).resolve().parent / "static"
 session_cookie = APIKeyCookie(
@@ -72,7 +73,14 @@ def create_app(database_path: str | None = None) -> FastAPI:
 
     @asynccontextmanager
     async def lifespan(application: FastAPI):
-        init_db(application.state.database_path)
+        path = application.state.database_path
+        if not Path(path).expanduser().exists():
+            init_db(path)
+        connection = connect(path)
+        try:
+            check_schema(connection)
+        finally:
+            connection.close()
         yield
 
     application = FastAPI(
@@ -119,7 +127,12 @@ def create_app(database_path: str | None = None) -> FastAPI:
                 "error": {
                     "code": "VALIDATION_ERROR",
                     "message": "Запрос не прошёл проверку",
-                    "details": jsonable_encoder(error.errors()),
+                    "details": jsonable_encoder(
+                        [
+                            {k: v for k, v in item.items() if k not in {"input", "ctx"}}
+                            for item in error.errors()
+                        ]
+                    ),
                 }
             },
         )
@@ -179,7 +192,7 @@ def register_routes(application: FastAPI) -> None:
     def ready(request: Request) -> dict[str, str]:
         connection = connect(request.app.state.database_path)
         try:
-            connection.execute("SELECT 1")
+            check_schema(connection)
         finally:
             connection.close()
         return {"status": "ready"}

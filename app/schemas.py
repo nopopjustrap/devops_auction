@@ -3,7 +3,14 @@
 from datetime import datetime
 from decimal import Decimal
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    EmailStr,
+    Field,
+    field_validator,
+    model_validator,
+)
 
 
 class ApiModel(BaseModel):
@@ -11,6 +18,7 @@ class ApiModel(BaseModel):
 
 
 class AuthCredentials(ApiModel):
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=False)
     username: str = Field(min_length=3, max_length=50, pattern=r"^[\w.-]+$")
     password: str = Field(min_length=8, max_length=128)
 
@@ -29,7 +37,7 @@ class AuthStatusOut(ApiModel):
 
 class ParticipantCreate(ApiModel):
     name: str = Field(min_length=2, max_length=100)
-    email: str = Field(min_length=5, max_length=254)
+    email: EmailStr = Field(max_length=254)
     phone: str | None = Field(default=None, max_length=30)
 
     @field_validator("email")
@@ -53,6 +61,7 @@ class AuctionCreate(ApiModel):
     description: str | None = Field(default=None, max_length=1000)
     starts_at: datetime
     ends_at: datetime
+    commission_bps: int = Field(default=0, ge=0, le=10000, strict=True)
 
     @model_validator(mode="after")
     def validate_period(self) -> "AuctionCreate":
@@ -90,6 +99,8 @@ class SaleCreate(ApiModel):
 
 
 class SaleOut(SaleCreate):
+    commission: Decimal
+    seller_proceeds: Decimal
     id: int
     sold_at: datetime
 
@@ -98,3 +109,5 @@ class RevenueReportOut(ApiModel):
     auction_id: int | None
     sales_count: int
     gross_revenue: Decimal
+    commission_revenue: Decimal
+    seller_proceeds: Decimal
