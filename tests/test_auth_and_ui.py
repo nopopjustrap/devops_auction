@@ -1,5 +1,6 @@
 import sqlite3
 
+import pytest
 from fastapi.testclient import TestClient
 
 
@@ -26,6 +27,42 @@ def test_business_api_requires_authentication(raw_client: TestClient) -> None:
     )
     assert response.status_code == 401
     assert response.json()["error"]["code"] == "AUTH_REQUIRED"
+
+
+@pytest.mark.parametrize(
+    "revision", ["development", "abcdef0123456789" * 2 + "01234567"]
+)
+def test_ui_shows_running_release_before_and_after_login(
+    raw_client, monkeypatch, revision
+):
+    monkeypatch.setattr(
+        "app.main.release_version", lambda: {"version": "0.3.1", "revision": revision}
+    )
+    release = raw_client.get("/version").json()
+    page = raw_client.get("/")
+    short_revision = revision if revision == "development" else revision[:7]
+    label = f"Версия {release['version']} · {short_revision}"
+    login_view, operator_view = page.text.split('id="app-view"', maxsplit=1)
+    for view in (login_view, operator_view):
+        assert label in view
+        assert f'title="{release["revision"]}"' in view
+    assert page.headers["cache-control"] == "no-store"
+    assert "{{RELEASE_" not in page.text
+    assert "Версия 0.1.1" not in page.text
+
+
+def test_ui_escapes_release_metadata(raw_client, monkeypatch):
+    monkeypatch.setattr(
+        "app.main.release_version",
+        lambda: {
+            "version": "<script>alert(1)</script>",
+            "revision": '" onmouseover="x',
+        },
+    )
+    page = raw_client.get("/")
+    assert "<script>alert(1)</script>" not in page.text
+    assert "&lt;script&gt;alert(1)&lt;/script&gt;" in page.text
+    assert 'title="&quot; onmouseover=&quot;x"' in page.text
 
 
 def test_first_user_registration_login_and_logout(raw_client: TestClient) -> None:

@@ -25,7 +25,7 @@ def test_version_is_public_and_not_runtime_override(raw_client, monkeypatch):
     monkeypatch.setenv("VCS_REF", "fake-revision")
     response = raw_client.get("/version")
     assert response.status_code == 200
-    assert response.json() == {"version": "0.3.0", "revision": "development"}
+    assert response.json() == {"version": "0.3.1", "revision": "development"}
 
 
 def test_baked_revision(monkeypatch, tmp_path):
