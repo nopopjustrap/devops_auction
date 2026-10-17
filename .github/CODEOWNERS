@@ -1,0 +1,16 @@
+# Owners must have write access. Add a second real maintainer before requiring
+# approval for PRs authored by nopopjustrap: authors cannot approve their own PR.
+/.github/ @nopopjustrap
+/.ci/ @nopopjustrap
+/tests/ @nopopjustrap
+/scripts/ @nopopjustrap
+/migrations/ @nopopjustrap
+/Makefile @nopopjustrap
+/requirements* @nopopjustrap
+/pyproject.toml @nopopjustrap
+/pytest.ini @nopopjustrap
+/.gitleaks.toml @nopopjustrap
+/.dockerignore @nopopjustrap
+/.gitignore @nopopjustrap
+/Dockerfile @nopopjustrap
+/CONTRIBUTING.md @nopopjustrap

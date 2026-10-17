@@ -1,0 +1,3 @@
+-c requirements-audit.lock
+# Separate environment: the auditor must not alter application dependencies.
+pip-audit==2.10.1

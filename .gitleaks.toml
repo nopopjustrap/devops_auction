@@ -1,0 +1,9 @@
+title = "Auction secret scanning"
+[extend]
+useDefault = true
+
+[[rules]]
+id = "lr5-demonstration-secret"
+description = "Nonfunctional canary for the laboratory demonstration"
+regex = '''LR5_DEMO_SECRET_[A-Z0-9]{32}'''
+keywords = ["LR5_DEMO_SECRET_"]

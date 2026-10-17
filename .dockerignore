@@ -1,0 +1,11 @@
+*
+!app/
+!app/**
+!migrations/
+!migrations/**
+!alembic.ini
+!requirements.txt
+!requirements.lock
+!Dockerfile
+**/__pycache__/
+**/*.pyc
