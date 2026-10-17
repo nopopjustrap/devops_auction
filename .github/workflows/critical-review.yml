@@ -1,0 +1,23 @@
+name: Critical file review
+on:
+  pull_request_target:
+    types: [opened, synchronize, reopened, ready_for_review]
+permissions:
+  contents: read
+  pull-requests: read
+jobs:
+  review:
+    name: critical-review
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      # Only trusted base code is checked out. No PR dependency installation,
+      # checkout of head, build, caches, artifacts, or execution of PR code.
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          ref: ${{ github.event.pull_request.base.sha }}
+          persist-credentials: false
+      - name: Require owner review of critical changes
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: python3 scripts/critical_review.py
