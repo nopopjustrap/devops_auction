@@ -4,13 +4,14 @@ import os
 import sqlite3
 from collections.abc import Generator
 from contextlib import asynccontextmanager
+from html import escape
 from pathlib import Path
 from typing import Annotated, Any
 
 from fastapi import Depends, FastAPI, Query, Request, Response, Security, status
 from fastapi.encoders import jsonable_encoder
 from fastapi.exceptions import RequestValidationError
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.security import APIKeyCookie
 from fastapi.staticfiles import StaticFiles
 
@@ -184,9 +185,17 @@ def register_routes(application: FastAPI) -> None:
     def version() -> dict[str, str]:
         return release_version()
 
-    @application.get("/", include_in_schema=False, response_class=FileResponse)
-    def web_interface() -> FileResponse:
-        return FileResponse(STATIC_DIRECTORY / "index.html")
+    @application.get("/", include_in_schema=False, response_class=HTMLResponse)
+    def web_interface() -> HTMLResponse:
+        release = release_version()
+        revision = release["revision"]
+        short_revision = revision if revision == "development" else revision[:7]
+        label = f"Версия {release['version']} · {short_revision}"
+        page = (STATIC_DIRECTORY / "index.html").read_text(encoding="utf-8")
+        page = page.replace("{{RELEASE_LABEL}}", escape(label)).replace(
+            "{{RELEASE_REVISION}}", escape(revision, quote=True)
+        )
+        return HTMLResponse(page, headers={"Cache-Control": "no-store"})
 
     @application.get("/health", tags=["service"])
     def health() -> dict[str, str]:

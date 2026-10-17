@@ -3,7 +3,7 @@
 import json
 from pathlib import Path
 
-APP_VERSION = "0.3.0"
+APP_VERSION = "0.3.1"
 
 
 def release_version() -> dict[str, str]:
