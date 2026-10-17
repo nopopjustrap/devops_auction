@@ -272,7 +272,7 @@ def create_sale(connection: sqlite3.Connection, data: SaleCreate) -> dict[str, A
         raise DomainError(
             409, "BUYER_INACTIVE", "Неактивный покупатель не может купить лот"
         )
-    if data.final_price < lot["starting_price"]:
+    if data.final_price <= lot["starting_price"]:
         raise DomainError(
             409,
             "PRICE_BELOW_STARTING_PRICE",
