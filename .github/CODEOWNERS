@@ -14,3 +14,21 @@
 /.gitignore @nopopjustrap
 /Dockerfile @nopopjustrap
 /CONTRIBUTING.md @nopopjustrap
+
+/.github/ @nopopjustrap @Shayrma749506887
+/.ci/ @nopopjustrap @Shayrma749506887
+/tests/ @nopopjustrap @Shayrma749506887
+/scripts/ @nopopjustrap @Shayrma749506887
+/migrations/ @nopopjustrap @Shayrma749506887
+/Makefile @nopopjustrap @Shayrma749506887
+/requirements* @nopopjustrap @Shayrma749506887
+/pyproject.toml @nopopjustrap @Shayrma749506887
+/pytest.ini @nopopjustrap @Shayrma749506887
+/.gitleaks.toml @nopopjustrap @Shayrma749506887
+/.dockerignore @nopopjustrap @Shayrma749506887
+/.gitignore @nopopjustrap @Shayrma749506887
+/Dockerfile @nopopjustrap @Shayrma749506887
+/CONTRIBUTING.md @nopopjustrap @Shayrma749506887
+
+/deploy/ @nopopjustrap @Shayrma749506887
+/app/version.py @nopopjustrap @Shayrma749506887
