@@ -75,7 +75,7 @@ setup-python кэширует загрузки pip по requirements-файла�
 
 Dockerfile использует отдельную стадию установки зависимостей и runtime без
 тестов, отчётов, исходной .git, .env и БД. Контейнер работает под UID 10001.
-Образ Python берётся из `python:3.12-slim-bookworm`; тег обновляемый, поэтому
+Образ Python берётся из `python:3.12.15-alpine3.24`; тег обновляемый, поэтому
 это не побитовая воспроизводимость между разными запусками. В одном pipeline
 образ строится один раз, сохраняется в tar с SHA-256 и именно этот tar
 проверяется и публикуется. Повторной сборки перед push нет.
@@ -219,3 +219,22 @@ critical-review без независимого approval и заблокиров
 запуск независим от сообщения автора «у меня всё прошло»: runner получает
 код из Git, создаёт окружение и заново выполняет проверки. Защищённая ветка
 делает их обязательными для слияния, зависимости pipeline — для публикации.
+
+## Исправление, найденное при внедрении CI
+
+Первый pip-audit выявил CVE-2025-71176 в pytest 8.4.2: небезопасное обращение
+с временными каталогами. pytest обновлён до 9.0.3 в requirements-dev.txt
+и requirements.lock. Повторный аудит завершился без известных уязвимостей.
+Исключение для уязвимости не добавлялось.
+
+Источники:
+
+- [GitHub Advisory: CVE-2025-71176](https://github.com/advisories/GHSA-6w46-j5rx-g56g).
+- [GitHub Actions: публикация Docker-образов](https://docs.github.com/en/actions/tutorials/publish-packages/publish-docker-images).
+- [Защищённые ветки](https://docs.github.com/en/repositories/configuring-branches-and-merges-in-your-repository/managing-protected-branches/about-protected-branches).
+- [CODEOWNERS](https://docs.github.com/en/repositories/managing-your-repositorys-settings-and-features/customizing-your-repository/about-code-owners).
+
+Первый контейнер на Debian 12 был заблокирован Trivy из-за HIGH/CRITICAL
+в системных пакетах. База заменена на официальный Python 3.12.15 / Alpine 3.24
+с обновлением пакетов. Порог сканера и проверка неисправленных уязвимостей
+сохранены; окончательный результат фиксируется по повторному CI-прогону.

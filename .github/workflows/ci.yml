@@ -35,7 +35,7 @@ jobs:
           cache: pip
           cache-dependency-path: |
             requirements*.txt
-            requirements.lock
+            requirements*.lock
       - name: Isolate database
         run: echo "DATABASE_PATH=$RUNNER_TEMP/auction-${{ matrix.stage }}.db" >> "$GITHUB_ENV"
       - run: make setup

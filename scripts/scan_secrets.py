@@ -23,6 +23,15 @@ def main():
         "-v",
         f"{root}/.gitleaks.toml:/config.toml:ro",
     ]
+    # A linked worktree has a .git file pointing outside the working directory.
+    # Mount its Git metadata read-only at the same absolute path for git log.
+    if (root / ".git").is_file():
+        common_dir = Path(
+            subprocess.check_output(
+                ["git", "rev-parse", "--git-common-dir"], text=True
+            ).strip()
+        ).resolve()
+        common += ["-v", f"{common_dir}:{common_dir}:ro"]
     flags = [
         "--config=/config.toml",
         "--redact=100",
