@@ -46,7 +46,18 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: python3 scripts/select_release.py
+      - name: Connect to staging network
+        id: tailnet
+        uses: tailscale/github-action@d1b6cd204f8dceda5b3eaad7f1f767be390056cd # v4
+        with:
+          oauth-client-id: ${{ secrets.TS_OAUTH_CLIENT_ID }}
+          oauth-secret: ${{ secrets.TS_OAUTH_SECRET }}
+          tags: tag:auction-ci
+          version: 1.104.1
+          args: --accept-dns=false
+          ping: ${{ vars.STAGING_HOST }}
       - name: Deliver and accept on target host
+        id: delivery
         env:
           DELIVERY_ACTION: ${{ steps.release.outputs.action }}
           DELIVERY_TAG: ${{ steps.release.outputs.tag }}

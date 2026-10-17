@@ -2,7 +2,7 @@
 
 ## Реализация и границы результата
 
-Для доставки выбран отдельный Linux staging-сервер с Docker Engine, Python 3.10+
+Для доставки выбран отдельный Linux staging-сервер с Docker Engine, Python 3.11+
 и SSH. Основная база разработчика и окружение GitHub runner не являются staging.
 Приложение доступно на сервере только по `127.0.0.1:18000`; для UI используется
 SSH-туннель через административную учётную запись.
@@ -24,7 +24,9 @@ SSH-туннель через административную учётную з
 4. Workflow `CD staging` получает событие завершения CI. Он принимает только
    успешный запуск `push` в main этого репозитория, дополнительно проверяя
    успешность job `publish`. Старый автоматический запуск при сдвиге main отклоняется.
-5. GitHub Environment `staging` выдаёт SSH-ключ отдельной учётной записи.
+5. GitHub Environment `staging` выдаёт OAuth-реквизиты Tailscale и SSH-ключ отдельной
+   учётной записи. После проверки публикации runner подключается к закрытой сети
+   как временное устройство с тегом `tag:auction-ci`. Ошибка подключения блокирует SSH.
 6. На сервер передаются только два проверочных Python-скрипта. Исходники приложения
    и Dockerfile на сервер не передаются; сборка там отсутствует.
 7. Сервер выполняет `docker pull`, проверяет label revision и получает registry
@@ -85,10 +87,10 @@ prune --volumes`: без сохранённых ресурсов офлайн-о
 
 ## Подготовка сервера владельцем
 
-Нужна отдельная тестовая ВМ с доступным для GitHub-hosted runner SSH, Docker Engine,
-Python 3.10+ и исходящим HTTPS к GHCR. Для частного адреса потребуется отдельно
-организовать сетевой доступ или доверенный self-hosted runner; одного адреса из
-локальной сети недостаточно. Docker устанавливается по официальной инструкции
+Нужна отдельная тестовая ВМ с Docker Engine, Python 3.11+, SSH и исходящим HTTPS
+к GHCR и Tailscale. В выбранной схеме ВМ находится за NAT VirtualBox; GitHub-hosted
+runner подключается к ней через Tailscale. Публичный SSH и проброс на домашнем
+роутере не требуются. Docker устанавливается по официальной инструкции
 для ОС сервера: https://docs.docker.com/engine/install/.
 
 На сервере администратор выполняет скрипт из проверенной версии репозитория:
@@ -100,6 +102,59 @@ sudo sh deploy/bootstrap.sh
 Создаётся пользователь `auction-deploy`, каталог `/opt/auction-staging` и членство
 в группе docker. Членство в docker фактически даёт управление всем хостом, поэтому
 используется отдельная ВМ без рабочих данных. CI не получает root SSH-ключ или sudo.
+
+### Сеть VirtualBox и Tailscale
+
+Административный доступ с Windows: NAT-правило VirtualBox
+`127.0.0.1:2222` → гостевой порт `22`, затем
+`ssh -p 2222 <пользователь-Ubuntu>@127.0.0.1`. Это локальный доступ, он не делает ВМ
+доступной для GitHub Actions. ВМ и Windows должны оставаться включёнными при выпуске.
+
+На ВМ установить Tailscale из официального репозитория Ubuntu 26.04:
+https://pkgs.tailscale.com/stable/#ubuntu-resolute.
+Подключить ВМ к отдельной личной сети для лабораторной:
+
+```bash
+sudo systemctl enable --now tailscaled
+sudo tailscale up --hostname=auction-staging --accept-dns=false
+tailscale ip -4
+```
+
+Авторизацию по выданной ссылке выполнить в браузере. В Tailscale → Access controls
+перенести `deploy/tailscale-policy.json` для этой отдельной сети. В существующей сети
+с другими устройствами правила нужно объединять осознанно, а не заменять весь файл.
+Политика разрешает только TCP/22 от `tag:auction-ci` к `tag:auction-staging`.
+Сохранённые policy tests запрещают случайно открыть runner порты 80, 443 и 18000.
+Широкое исходное правило «все ко всем» нужно убрать: разрешения складываются.
+Оно также приведёт к падению этих отрицательных policy tests.
+
+После сохранения политики назначить серверу тег:
+
+```bash
+sudo tailscale set --advertise-tags=tag:auction-staging
+tailscale status
+```
+
+В Tailscale → Settings → Trust credentials (в старом интерфейсе OAuth clients)
+создать OAuth credential с правом **Auth Keys: Write** (`auth_keys`) и только тегом
+`tag:auction-ci`. Сохранить Client ID и Client secret непосредственно в секретах
+GitHub Environment `staging`: `TS_OAUTH_CLIENT_ID`, `TS_OAUTH_SECRET`.
+Клиенту не выдавать права изменения access policy или тег сервера.
+Secret показывается при создании один раз; не передавать его в чат или Git.
+
+`STAGING_HOST` — адрес из `tailscale ip -4`, `STAGING_PORT_SSH=22`.
+`127.0.0.1:2222` используется только администратором на Windows.
+Workflow использует закреплённый commit `tailscale/github-action` v4 и клиент
+1.104.1, ждёт доступности узла и удаляет временный runner из сети при завершении.
+Используется обычный OpenSSH с отдельным ключом: Tailscale SSH включать не нужно.
+Политика в репозитории является шаблоном; её фактическое применение проверяется
+отдельно в консоли Tailscale и при первом серверном выпуске.
+
+Официальные инструкции:
+https://tailscale.com/docs/integrations/github/github-action,
+https://tailscale.com/docs/features/oauth-clients.
+
+### SSH-ключ и конфигурация приложения
 
 На своём компьютере создать отдельный ключ именно для staging:
 
@@ -155,7 +210,8 @@ Settings → Environments → создать `staging`:
 - Environment variables: STAGING_HOST, STAGING_USER=`auction-deploy`, STAGING_PORT_SSH=`22`
   или фактический порт;
 - Environment secrets: STAGING_SSH_KEY — содержимое отдельного приватного ключа;
-  STAGING_KNOWN_HOSTS — проверенная строка known_hosts.
+  STAGING_KNOWN_HOSTS — проверенная строка known_hosts;
+  TS_OAUTH_CLIENT_ID и TS_OAUTH_SECRET — OAuth-клиент с тегом `tag:auction-ci`.
 
 Приватный ключ и registry-токен в переписку не передаются. Pipeline использует
 StrictHostKeyChecking=yes, а не автоматическое доверие новому SSH-хосту.

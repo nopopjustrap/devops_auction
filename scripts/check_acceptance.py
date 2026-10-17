@@ -96,6 +96,19 @@ def check(root=Path("."), base=None):
         deploy = cd.get("jobs", {}).get("deploy", {})
         if deploy.get("environment") != "staging":
             errors.append("Deployment must use the staging environment")
+        steps = deploy.get("steps", [])
+        ids = [step.get("id") for step in steps]
+        network = next((step for step in steps if step.get("id") == "tailnet"), {})
+        if (
+            not network.get("uses", "").startswith("tailscale/github-action@")
+            or "if" in network
+            or network.get("with", {}).get("tags") != "tag:auction-ci"
+            or any(name not in ids for name in ("release", "tailnet", "delivery"))
+            or not ids.index("release") < ids.index("tailnet") < ids.index("delivery")
+        ):
+            errors.append(
+                "CD must connect the restricted tailnet after release validation and before SSH"
+            )
         condition = deploy.get("if", "")
         if any(
             value not in condition
