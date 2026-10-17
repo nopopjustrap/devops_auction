@@ -131,9 +131,14 @@ tailscale ip -4
 После сохранения политики назначить серверу тег:
 
 ```bash
-sudo tailscale set --advertise-tags=tag:auction-staging
+sudo tailscale up --hostname=auction-staging --accept-dns=false \
+  --advertise-tags=tag:auction-staging
 tailscale status
 ```
+
+Параметр `--advertise-tags` относится к `tailscale up`, а не к `tailscale set`.
+В команде сохранены ранее заданные hostname и accept-dns. Если появится ссылка
+повторной авторизации, открыть её в браузере и подтвердить устройство.
 
 В Tailscale → Settings → Trust credentials (в старом интерфейсе OAuth clients)
 создать OAuth credential с правом **Auth Keys: Write** (`auth_keys`) и только тегом
