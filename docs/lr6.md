@@ -263,6 +263,18 @@ no-store`, чтобы обновление страницы после выпу�
 Откат возвращает также сохраненный том БД предыдущего релиза: новые данные
 остаются в томе отмененной версии и не переносятся в старую автоматически.
 
+### Подтверждённые результаты второго выпуска (17.10.2026)
+
+PR [#19](https://github.com/nopopjustrap/devops_auction/pull/19) согласован CODEOWNER и слит в `main`. Релиз 0.3.1 использует SHA `1b0f1ef24011a9143589f69fe96c62f9dfbe217c`.
+
+| Проверка | GitHub Actions | Фактический результат |
+|---|---|---|
+| Защита от неверного релиза | [39066214859](https://github.com/nopopjustrap/devops_auction/actions/runs/39066214859) | Ожидаемый отказ `No successful CI publication for this main revision` в `Require a published main image`; подключение к staging не выполнялось |
+| Ручной rollback | [39066397930](https://github.com/nopopjustrap/devops_auction/actions/runs/39066397930) | `status=accepted`, `action=rollback`, версия `0.3.0`, revision `ae18edfb4f4de7f070e84583282efb6d6b37c89a` |
+| Повторный deploy | [39066665802](https://github.com/nopopjustrap/devops_auction/actions/runs/39066665802) | `status=accepted`, версия `0.3.1`, revision `1b0f1ef24011a9143589f69fe96c62f9dfbe217c` |
+
+Оба успешных запуска выполнили проверочный сценарий `login -> auction -> lot -> sale -> commission report -> close`. Проверка некорректного релиза завершилась красным workflow **намеренно**: до сети staging и операций с контейнером дело не дошло. После rollback на сервере вновь успешно принята версия 0.3.0; затем успешный deploy восстановил актуальную 0.3.1. Журналы `deploy-and-accept` и артефакты `staging-delivery` служат свидетельствами реальной приёмки.
+
 ### Запуск workflow вручную
 
 GitHub → Actions → CD staging → Run workflow → branch `main`:
