@@ -18,3 +18,7 @@ backups/
 .audit-venv/
 .cache/
 dist/
+
+# Baked image metadata and private staging runtime configuration
+app/build_info.json
+deploy/staging.env

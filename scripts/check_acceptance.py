@@ -34,6 +34,7 @@ TARGETS = {
     "container-build",
     "container-check",
     "container-scan",
+    "delivery-check",
 }
 
 
@@ -64,17 +65,48 @@ def check(root=Path("."), base=None):
     jobs = workflow["jobs"]
     if set(jobs["checks"]["strategy"]["matrix"]["stage"]) != STAGES:
         errors.append("CI check stages changed")
-    if set(jobs["gate"]["needs"]) != {"checks", "build", "container"}:
+    if set(jobs["gate"]["needs"]) != {"checks", "build", "container", "delivery"}:
         errors.append("ci-gate must depend on all required jobs")
     if jobs["gate"].get("if") != "always()":
         errors.append("ci-gate must run after failed/skipped jobs")
     if jobs["build"]["needs"] != "checks" or jobs["container"]["needs"] != "build":
         errors.append("Build/container dependencies changed")
+    if jobs.get("delivery", {}).get("needs") != "build":
+        errors.append("Delivery rehearsal must depend on the tested build")
     publish = jobs["publish"]
     if publish["needs"] != "gate" or publish.get("if") != (
         "github.event_name == 'push' && github.ref == 'refs/heads/main'"
     ):
         errors.append("Publishing must be gated and restricted to main pushes")
+    cd_path = root / ".github/workflows/cd.yml"
+    if not cd_path.exists():
+        errors.append("CD workflow missing")
+    else:
+        cd = yaml.safe_load(cd_path.read_text())
+        triggers = cd.get("on", cd.get(True, {}))
+        if set(triggers) != {"workflow_run", "workflow_dispatch"}:
+            errors.append("CD triggers must exclude PR code")
+        if cd.get("concurrency") != {
+            "group": "auction-staging-delivery",
+            "cancel-in-progress": False,
+        }:
+            errors.append(
+                "CD must serialize deployments without cancelling active work"
+            )
+        deploy = cd.get("jobs", {}).get("deploy", {})
+        if deploy.get("environment") != "staging":
+            errors.append("Deployment must use the staging environment")
+        condition = deploy.get("if", "")
+        if any(
+            value not in condition
+            for value in (
+                "refs/heads/main",
+                "conclusion == 'success'",
+                "event == 'push'",
+                "head_repository.full_name == github.repository",
+            )
+        ):
+            errors.append("CD must require a successful main push of this repository")
     for path in (root / ".github/workflows").glob("*.yml"):
         text = path.read_text()
         if "continue-on-error:" in text:

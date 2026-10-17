@@ -52,6 +52,7 @@ verify:
 	$(MAKE) container-build
 	$(MAKE) container-check
 	$(MAKE) container-scan
+	$(MAKE) delivery-check
 clean:
 	$(VENV_PYTHON) -c "from pathlib import Path; import shutil; shutil.rmtree('reports', ignore_errors=True); Path('.coverage').unlink(missing_ok=True)"
 
@@ -77,9 +78,13 @@ secrets-check:
 policy-check:
 	$(VENV_PYTHON) scripts/check_acceptance.py
 container-build:
-	docker build --pull --tag "$(IMAGE)" .
+	docker build --pull --build-arg VCS_REF="$(shell git rev-parse HEAD)" --tag "$(IMAGE)" .
 container-check:
 	sh scripts/container_smoke.sh
 container-scan:
 	mkdir -p reports .cache/trivy
 	docker run --rm --user "$$(id -u):$$(id -g)" --group-add "$$(stat -c %g /var/run/docker.sock)" -v /var/run/docker.sock:/var/run/docker.sock -v "$(CURDIR)/reports:/reports" -v "$(CURDIR)/.cache/trivy:/cache" "$(TRIVY_IMAGE)" image --cache-dir /cache --scanners vuln --severity HIGH,CRITICAL --exit-code 1 --format json --output /reports/container-vulnerabilities.json "$(IMAGE)"
+
+.PHONY: delivery-check
+delivery-check:
+	python3 scripts/delivery_demo.py

@@ -20,6 +20,7 @@ def policy_copy(tmp_path):
         "tests/functional-coverage.json",
         ".github/workflows/ci.yml",
         ".github/workflows/critical-review.yml",
+        ".github/workflows/cd.yml",
     ):
         destination = tmp_path / name
         destination.parent.mkdir(parents=True, exist_ok=True)

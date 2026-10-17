@@ -18,6 +18,10 @@ COPY --from=builder /opt/venv /opt/venv
 COPY app ./app
 COPY migrations ./migrations
 COPY alembic.ini ./
+ARG VCS_REF
+RUN python -c 'import json,re,sys; revision=sys.argv[1]; assert re.fullmatch("[0-9a-f]{40}", revision), "VCS_REF must be a full SHA"; open("app/build_info.json", "w").write(json.dumps({"revision": revision}))' "$VCS_REF"
+LABEL org.opencontainers.image.revision=$VCS_REF \
+    org.opencontainers.image.source="https://github.com/nopopjustrap/devops_auction"
 USER 10001:10001
 EXPOSE 8000
 HEALTHCHECK --interval=10s --timeout=3s --start-period=20s --retries=3 \

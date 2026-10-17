@@ -5,9 +5,18 @@ import os
 import urllib.request
 from pathlib import Path
 
-PREFIXES = ("tests/", "scripts/", "migrations/", ".github/", ".ci/", "requirements")
+PREFIXES = (
+    "tests/",
+    "scripts/",
+    "migrations/",
+    "deploy/",
+    ".github/",
+    ".ci/",
+    "requirements",
+)
 FILES = {
     "Makefile",
+    "app/version.py",
     "pyproject.toml",
     "pytest.ini",
     "Dockerfile",
