@@ -2,6 +2,7 @@
 
 Система — GitHub Actions, реестр образов — GitHub Container Registry (GHCR).
 Задача: [#9](https://github.com/nopopjustrap/devops_auction/issues/9).
+[Фактические результаты и ссылки на CI-демонстрации](verification-lr5.md).
 Workflow: `.github/workflows/ci.yml`.
 
 ## Запуск и единые команды
