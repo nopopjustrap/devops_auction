@@ -20,6 +20,7 @@ def policy_copy(tmp_path):
         "tests/functional-coverage.json",
         ".github/workflows/ci.yml",
         ".github/workflows/critical-review.yml",
+        ".github/workflows/cd.yml",
     ):
         destination = tmp_path / name
         destination.parent.mkdir(parents=True, exist_ok=True)
@@ -39,6 +40,9 @@ def test_valid_ci_policy(policy_copy):
         ("pyproject.toml", "fail_under = 85", "fail_under = 20"),
         (".github/workflows/ci.yml", "needs: gate", "needs: build"),
         (".github/workflows/ci.yml", "if: always()", "if: success()"),
+        (".github/workflows/cd.yml", "id: tailnet", "id: removed-network"),
+        (".github/workflows/cd.yml", "id: tailnet", "id: tailnet\n        if: false"),
+        (".github/workflows/cd.yml", "tags: tag:auction-ci", "tags: tag:admin"),
         (
             ".github/workflows/ci.yml",
             "runs-on: ubuntu-24.04",

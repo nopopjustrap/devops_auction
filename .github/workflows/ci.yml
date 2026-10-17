@@ -127,10 +127,32 @@ jobs:
           path: reports/
           if-no-files-found: error
           retention-days: 14
+  delivery:
+    name: delivery-check
+    needs: build
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          name: verified-image-candidate
+          path: dist/
+      - run: sha256sum -c dist/image.sha256 && docker load -i dist/image.tar
+      - run: make delivery-check
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        if: always()
+        with:
+          name: reports-delivery-${{ github.run_attempt }}
+          path: reports/
+          if-no-files-found: error
+          retention-days: 14
   gate:
     name: ci-gate
     if: always()
-    needs: [checks, build, container]
+    needs: [checks, build, container, delivery]
     runs-on: ubuntu-24.04
     timeout-minutes: 2
     steps:
@@ -139,10 +161,12 @@ jobs:
           CHECKS: ${{ needs.checks.result }}
           BUILD: ${{ needs.build.result }}
           CONTAINER: ${{ needs.container.result }}
+          DELIVERY: ${{ needs.delivery.result }}
         run: |
           test "$CHECKS" = success
           test "$BUILD" = success
           test "$CONTAINER" = success
+          test "$DELIVERY" = success
   publish:
     name: publish
     needs: gate

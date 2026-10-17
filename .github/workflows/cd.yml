@@ -1,0 +1,77 @@
+name: CD staging
+on:
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      action:
+        description: Staging operation
+        type: choice
+        options: [deploy, rollback, recover]
+        default: deploy
+        required: true
+      tag:
+        description: 'deploy only: sha-<full commit SHA>; empty for rollback/recover'
+        type: string
+        required: false
+permissions:
+  contents: read
+  actions: read
+concurrency:
+  group: auction-staging-delivery
+  cancel-in-progress: false
+jobs:
+  deploy:
+    if: >-
+      github.ref == 'refs/heads/main' &&
+      (github.event_name == 'workflow_dispatch' ||
+       (github.event.workflow_run.conclusion == 'success' &&
+        github.event.workflow_run.event == 'push' &&
+        github.event.workflow_run.head_branch == 'main' &&
+        github.event.workflow_run.head_repository.full_name == github.repository))
+    name: deploy-and-accept
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    environment: staging
+    steps:
+      # Only trusted default-branch deployment scripts; never PR artifacts or code.
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - name: Require a published main image
+        id: release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: python3 scripts/select_release.py
+      - name: Connect to staging network
+        id: tailnet
+        uses: tailscale/github-action@d1b6cd204f8dceda5b3eaad7f1f767be390056cd # v4
+        with:
+          oauth-client-id: ${{ secrets.TS_OAUTH_CLIENT_ID }}
+          oauth-secret: ${{ secrets.TS_OAUTH_SECRET }}
+          tags: tag:auction-ci
+          version: 1.104.1
+          args: --accept-dns=false
+          ping: ${{ vars.STAGING_HOST }}
+      - name: Deliver and accept on target host
+        id: delivery
+        env:
+          DELIVERY_ACTION: ${{ steps.release.outputs.action }}
+          DELIVERY_TAG: ${{ steps.release.outputs.tag }}
+          STAGING_HOST: ${{ vars.STAGING_HOST }}
+          STAGING_USER: ${{ vars.STAGING_USER }}
+          STAGING_PORT_SSH: ${{ vars.STAGING_PORT_SSH }}
+          STAGING_SSH_KEY: ${{ secrets.STAGING_SSH_KEY }}
+          STAGING_KNOWN_HOSTS: ${{ secrets.STAGING_KNOWN_HOSTS }}
+        run: bash scripts/deploy_remote.sh
+      - name: Save deployment evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: staging-delivery-${{ github.run_id }}-${{ github.run_attempt }}
+          path: reports/
+          if-no-files-found: warn
+          retention-days: 14

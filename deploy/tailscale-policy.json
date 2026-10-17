@@ -1,0 +1,21 @@
+{
+  "tagOwners": {
+    "tag:auction-ci": ["autogroup:admin"],
+    "tag:auction-staging": ["autogroup:admin"]
+  },
+  "grants": [
+    {
+      "src": ["tag:auction-ci"],
+      "dst": ["tag:auction-staging"],
+      "ip": ["tcp:22"]
+    }
+  ],
+  "tests": [
+    {
+      "src": "tag:auction-ci",
+      "proto": "tcp",
+      "accept": ["tag:auction-staging:22"],
+      "deny": ["tag:auction-staging:80", "tag:auction-staging:443", "tag:auction-staging:18000"]
+    }
+  ]
+}

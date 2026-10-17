@@ -32,8 +32,8 @@ from app.schemas import (
     UserOut,
 )
 from app.services import DomainError
+from app.version import APP_VERSION, release_version
 
-APP_VERSION = "0.2.0"
 SESSION_COOKIE_NAME = "auction_session"
 STATIC_DIRECTORY = Path(__file__).resolve().parent / "static"
 session_cookie = APIKeyCookie(
@@ -180,6 +180,10 @@ CurrentUser = Annotated[dict[str, Any], Depends(get_current_user)]
 
 
 def register_routes(application: FastAPI) -> None:
+    @application.get("/version", tags=["service"])
+    def version() -> dict[str, str]:
+        return release_version()
+
     @application.get("/", include_in_schema=False, response_class=FileResponse)
     def web_interface() -> FileResponse:
         return FileResponse(STATIC_DIRECTORY / "index.html")
