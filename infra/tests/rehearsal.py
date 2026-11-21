@@ -38,6 +38,23 @@ def recap(output):
     return result
 
 
+def wait_for_boot(environment, process, probe, attempts=180, pause=time.sleep):
+    for _ in range(attempts):
+        code = process.poll()
+        if code is not None:
+            raise RuntimeError(
+                f"{environment}: QEMU exited with code {code}; "
+                f"see {environment}-console.log"
+            )
+        if probe(
+            environment, "test", "-f", "/var/lib/cloud/instance/boot-finished",
+            user="root", check=False,
+        ).returncode == 0:
+            return
+        pause(2)
+    raise RuntimeError(f"Debian did not become ready: {environment}")
+
+
 def main():
     REPORTS.mkdir(parents=True, exist_ok=True)
     results = {}
@@ -129,13 +146,8 @@ def main():
                 ], stdin=subprocess.DEVNULL, text=True, stdout=subprocess.PIPE,
                     stderr=subprocess.PIPE, check=check, timeout=15)
 
-            for environment in ("test", "staging"):
-                for _ in range(180):
-                    if ssh(environment, "test", "-f", "/var/lib/cloud/instance/boot-finished", user="root", check=False).returncode == 0:
-                        break
-                    time.sleep(2)
-                else:
-                    raise RuntimeError(f"Debian did not become ready: {environment}")
+            for index, environment in enumerate(("test", "staging")):
+                wait_for_boot(environment, machines[index][0], ssh)
             inventory_file = inventory / "hosts.yml"
             inventory_file.write_text(yaml.safe_dump(hosts))
 
