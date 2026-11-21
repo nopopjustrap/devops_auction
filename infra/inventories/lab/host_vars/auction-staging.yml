@@ -1,0 +1,3 @@
+---
+ansible_host: 10.0.2.7
+tailscale_address: 100.126.196.124

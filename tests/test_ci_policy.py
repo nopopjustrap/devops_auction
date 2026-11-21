@@ -21,6 +21,7 @@ def policy_copy(tmp_path):
         ".github/workflows/ci.yml",
         ".github/workflows/critical-review.yml",
         ".github/workflows/cd.yml",
+        ".github/workflows/infrastructure.yml",
     ):
         destination = tmp_path / name
         destination.parent.mkdir(parents=True, exist_ok=True)
@@ -37,6 +38,12 @@ def test_valid_ci_policy(policy_copy):
     [
         ("Makefile", "--cov-fail-under=85", "--cov-fail-under=20"),
         ("Makefile", "\t$(MAKE) security\n", ""),
+        ("Makefile", "\t$(MAKE) infra-check\n", ""),
+        (
+            ".github/workflows/infrastructure.yml",
+            "run: python infra/tests/rehearsal.py",
+            "run: echo skipped",
+        ),
         ("pyproject.toml", "fail_under = 85", "fail_under = 20"),
         (".github/workflows/ci.yml", "needs: gate", "needs: build"),
         (".github/workflows/ci.yml", "if: always()", "if: success()"),
@@ -69,6 +76,9 @@ def test_test_inventory_detects_removed_test():
         "Makefile",
         ".github/workflows/ci.yml",
         "scripts/check_acceptance.py",
+        "infra/roles/baseline/tasks/main.yml",
+        "infra/roles/application/templates/application.env.j2",
+        "infra/inventories/lab/group_vars/all/secrets.yml",
     ],
 )
 def test_critical_paths(name):

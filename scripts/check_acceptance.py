@@ -21,6 +21,7 @@ STAGES = {
     "secrets",
 }
 TARGETS = {
+    "infra-check",
     "policy-check",
     "quality",
     "security",
@@ -65,7 +66,13 @@ def check(root=Path("."), base=None):
     jobs = workflow["jobs"]
     if set(jobs["checks"]["strategy"]["matrix"]["stage"]) != STAGES:
         errors.append("CI check stages changed")
-    if set(jobs["gate"]["needs"]) != {"checks", "build", "container", "delivery"}:
+    if set(jobs["gate"]["needs"]) != {
+        "checks",
+        "build",
+        "container",
+        "delivery",
+        "infrastructure",
+    }:
         errors.append("ci-gate must depend on all required jobs")
     if jobs["gate"].get("if") != "always()":
         errors.append("ci-gate must run after failed/skipped jobs")
@@ -78,6 +85,29 @@ def check(root=Path("."), base=None):
         "github.event_name == 'push' && github.ref == 'refs/heads/main'"
     ):
         errors.append("Publishing must be gated and restricted to main pushes")
+    infrastructure_path = root / ".github/workflows/infrastructure.yml"
+    if not infrastructure_path.exists():
+        errors.append("Infrastructure workflow missing")
+    else:
+        infrastructure = yaml.safe_load(infrastructure_path.read_text())
+        if jobs.get("infrastructure") != {
+            "uses": "./.github/workflows/infrastructure.yml"
+        }:
+            errors.append(
+                "CI must call the infrastructure workflow at the same revision"
+            )
+        infra_job = infrastructure.get("jobs", {}).get("verify", {})
+        infra_steps = infra_job.get("steps", [])
+        commands = {step.get("run") for step in infra_steps}
+        if (
+            infra_job.get("name") != "infra-check"
+            or "if" in infra_job
+            or "make infra-check" not in commands
+            or "python infra/tests/rehearsal.py" not in commands
+            or any("if" in step for step in infra_steps if "run" in step)
+            or infrastructure.get("permissions") != {"contents": "read"}
+        ):
+            errors.append("Infrastructure syntax, lint and rehearsal must be mandatory")
     cd_path = root / ".github/workflows/cd.yml"
     if not cd_path.exists():
         errors.append("CD workflow missing")
@@ -125,6 +155,9 @@ def check(root=Path("."), base=None):
         if "continue-on-error:" in text:
             errors.append(f"Error suppression forbidden: {path}")
         for action in re.findall(r"uses:\s+([^\s]+)", text):
+            # This local reusable workflow comes from the same checked revision.
+            if action == "./.github/workflows/infrastructure.yml":
+                continue
             if not re.search(r"@[0-9a-f]{40}$", action):
                 errors.append(f"Action not pinned to commit: {action}")
     if base and not set(base) == {"0"}:

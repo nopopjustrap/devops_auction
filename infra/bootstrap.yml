@@ -1,0 +1,48 @@
+---
+- name: Prepare initial administrative access
+  hosts: auction
+  gather_facts: false
+  become: true
+  tasks:
+    # raw is needed only before Python exists on a freshly installed Debian.
+    - name: Install the Python and sudo prerequisites when absent
+      ansible.builtin.raw: |
+        if ! command -v python3 >/dev/null || ! command -v sudo >/dev/null; then
+          apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y python3 sudo
+          echo AUCTION_BOOTSTRAP_INSTALLED
+        fi
+      register: bootstrap_packages
+      changed_when: "'AUCTION_BOOTSTRAP_INSTALLED' in bootstrap_packages.stdout"
+
+    - name: Create the administrative account
+      ansible.builtin.user:
+        name: "{{ admin_user }}"
+        shell: /bin/bash
+        groups: sudo
+        append: true
+        create_home: true
+
+    - name: Create the administrative SSH directory
+      ansible.builtin.file:
+        path: "/home/{{ admin_user }}/.ssh"
+        state: directory
+        owner: "{{ admin_user }}"
+        group: "{{ admin_user }}"
+        mode: '0700'
+
+    - name: Install administrative public keys
+      ansible.builtin.copy:
+        content: "{{ admin_public_keys | join('\n') }}\n"
+        dest: "/home/{{ admin_user }}/.ssh/authorized_keys"
+        owner: "{{ admin_user }}"
+        group: "{{ admin_user }}"
+        mode: '0600'
+
+    - name: Configure administrative sudo
+      ansible.builtin.copy:
+        content: "{{ admin_user }} ALL=(ALL:ALL) NOPASSWD: ALL\n"
+        dest: "/etc/sudoers.d/{{ admin_user }}"
+        owner: root
+        group: root
+        mode: '0440'
+        validate: visudo -cf %s

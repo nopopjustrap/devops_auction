@@ -1,0 +1,31 @@
+---
+- name: Restart time synchronization
+  ansible.builtin.systemd_service:
+    name: systemd-timesyncd
+    state: restarted
+
+- name: Restart journal
+  ansible.builtin.systemd_service:
+    name: systemd-journald
+    state: restarted
+
+- name: Restart Docker
+  ansible.builtin.systemd_service:
+    name: docker
+    state: restarted
+
+- name: Restart node exporter
+  ansible.builtin.systemd_service:
+    name: prometheus-node-exporter
+    state: restarted
+
+- name: Reload SSH
+  ansible.builtin.systemd_service:
+    name: ssh
+    state: reloaded
+
+- name: Restart auction firewall
+  ansible.builtin.systemd_service:
+    name: auction-firewall
+    daemon_reload: true
+    state: restarted

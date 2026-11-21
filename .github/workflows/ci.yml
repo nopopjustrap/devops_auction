@@ -16,6 +16,8 @@ env:
   SESSION_TTL_HOURS: "8"
   IMAGE: auction-service:${{ github.sha }}
 jobs:
+  infrastructure:
+    uses: ./.github/workflows/infrastructure.yml
   checks:
     name: check-${{ matrix.stage }}
     runs-on: ubuntu-24.04
@@ -152,7 +154,7 @@ jobs:
   gate:
     name: ci-gate
     if: always()
-    needs: [checks, build, container, delivery]
+    needs: [checks, build, container, delivery, infrastructure]
     runs-on: ubuntu-24.04
     timeout-minutes: 2
     steps:
@@ -162,11 +164,13 @@ jobs:
           BUILD: ${{ needs.build.result }}
           CONTAINER: ${{ needs.container.result }}
           DELIVERY: ${{ needs.delivery.result }}
+          INFRASTRUCTURE: ${{ needs.infrastructure.result }}
         run: |
           test "$CHECKS" = success
           test "$BUILD" = success
           test "$CONTAINER" = success
           test "$DELIVERY" = success
+          test "$INFRASTRUCTURE" = success
   publish:
     name: publish
     needs: gate

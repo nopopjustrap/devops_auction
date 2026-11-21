@@ -22,3 +22,9 @@ dist/
 # Baked image metadata and private staging runtime configuration
 app/build_info.json
 deploy/staging.env
+
+# Private infrastructure overrides and credentials
+infra/.local/
+infra/vault-password*
+infra/*private*
+infra/inventories/**/vault.yml

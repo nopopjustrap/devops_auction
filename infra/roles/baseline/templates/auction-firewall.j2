@@ -1,0 +1,21 @@
+#!/bin/sh
+# Change only the dedicated INPUT chain; leave Docker forwarding and NAT intact.
+set -eu
+for tool in iptables ip6tables; do
+    "$tool" -w -N AUCTION-INPUT 2>/dev/null || "$tool" -w -L AUCTION-INPUT >/dev/null
+    "$tool" -w -C INPUT -j AUCTION-INPUT 2>/dev/null || "$tool" -w -I INPUT 1 -j AUCTION-INPUT
+    "$tool" -w -F AUCTION-INPUT
+    "$tool" -w -A AUCTION-INPUT -i lo -j ACCEPT
+    "$tool" -w -A AUCTION-INPUT -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT
+    "$tool" -w -A AUCTION-INPUT -i tailscale0 -p tcp --dport 22 -j ACCEPT
+    "$tool" -w -A AUCTION-INPUT -p udp --dport 41641 -j ACCEPT
+done
+iptables -w -A AUCTION-INPUT -p udp --sport 67 --dport 68 -j ACCEPT
+iptables -w -A AUCTION-INPUT -p icmp -j ACCEPT
+{% for source in firewall_ssh_sources %}
+iptables -w -A AUCTION-INPUT -s {{ source | quote }} -p tcp --dport 22 -j ACCEPT
+{% endfor %}
+iptables -w -A AUCTION-INPUT -s {{ monitoring_source | quote }} -p tcp --dport 9100 -j ACCEPT
+iptables -w -A AUCTION-INPUT -j DROP
+ip6tables -w -A AUCTION-INPUT -p ipv6-icmp -j ACCEPT
+ip6tables -w -A AUCTION-INPUT -j DROP

@@ -1,0 +1,296 @@
+---
+- name: Require Debian 12
+  ansible.builtin.assert:
+    that:
+      - ansible_facts.distribution == 'Debian'
+      - ansible_facts.distribution_major_version == '12'
+
+- name: Install base packages
+  ansible.builtin.apt:
+    name:
+      - ca-certificates
+      - curl
+      - git
+      - iptables
+      - jq
+      - make
+      - openssh-server
+      - python3
+      - python3-apt
+      - python3-venv
+      - sudo
+      - systemd-timesyncd
+      - prometheus-node-exporter
+    state: present
+    update_cache: true
+    cache_valid_time: 3600
+
+- name: Assign unique host name
+  ansible.builtin.hostname:
+    name: "{{ inventory_hostname }}"
+
+- name: Set local host name resolution
+  ansible.builtin.lineinfile:
+    path: /etc/hosts
+    regexp: '^127\.0\.1\.1\s'
+    line: "127.0.1.1 {{ inventory_hostname }}"
+
+- name: Set timezone link
+  ansible.builtin.file:
+    src: /usr/share/zoneinfo/{{ host_timezone }}
+    dest: /etc/localtime
+    state: link
+    force: true
+
+- name: Record timezone
+  ansible.builtin.copy:
+    content: "{{ host_timezone }}\n"
+    dest: /etc/timezone
+    owner: root
+    group: root
+    mode: '0644'
+
+- name: Create managed configuration directories
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    owner: root
+    group: root
+    mode: '0755'
+  loop:
+    - /etc/apt/keyrings
+    - /etc/systemd/timesyncd.conf.d
+    - /etc/systemd/journald.conf.d
+    - /etc/auction
+
+- name: Configure network time synchronization
+  ansible.builtin.copy:
+    content: "[Time]\nNTP=0.debian.pool.ntp.org 1.debian.pool.ntp.org\nFallbackNTP=time.cloudflare.com\n"
+    dest: /etc/systemd/timesyncd.conf.d/auction.conf
+    owner: root
+    group: root
+    mode: '0644'
+  notify: Restart time synchronization
+
+- name: Limit persistent system journal size
+  ansible.builtin.copy:
+    content: "[Journal]\nStorage=persistent\nSystemMaxUse=200M\nRuntimeMaxUse=50M\nMaxRetentionSec=7day\n"
+    dest: /etc/systemd/journald.conf.d/auction.conf
+    owner: root
+    group: root
+    mode: '0644'
+  notify: Restart journal
+
+- name: Install Docker repository key
+  ansible.builtin.get_url:
+    url: https://download.docker.com/linux/debian/gpg
+    dest: /etc/apt/keyrings/docker.asc
+    mode: '0644'
+
+- name: Configure Docker repository
+  ansible.builtin.copy:
+    content: "deb [arch=amd64 signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/debian bookworm stable\n"
+    dest: /etc/apt/sources.list.d/docker.list
+    owner: root
+    group: root
+    mode: '0644'
+  register: baseline_docker_repository
+
+- name: Install Docker Engine and Compose
+  ansible.builtin.apt:
+    name:
+      - docker-ce
+      - docker-ce-cli
+      - containerd.io
+      - docker-buildx-plugin
+      - docker-compose-plugin
+    state: present
+    update_cache: "{{ baseline_docker_repository.changed }}"
+
+- name: Inspect existing Docker configuration
+  ansible.builtin.stat:
+    path: /etc/docker/daemon.json
+  register: baseline_docker_config
+
+- name: Read existing Docker configuration
+  ansible.builtin.slurp:
+    src: /etc/docker/daemon.json
+  when: baseline_docker_config.stat.exists
+  register: baseline_docker_content
+
+- name: Configure bounded Docker logs while preserving other settings
+  ansible.builtin.copy:
+    content: >-
+      {{ ((baseline_docker_content.content | b64decode | from_json)
+          if baseline_docker_config.stat.exists else {})
+          | combine({'log-driver': 'local', 'log-opts': {'max-size': '10m', 'max-file': '3'}})
+          | combine(docker_daemon_overrides)
+          | to_nice_json }}
+    dest: /etc/docker/daemon.json
+    owner: root
+    group: root
+    mode: '0644'
+    validate: dockerd --validate --config-file %s
+  notify: Restart Docker
+
+- name: Install Tailscale repository key
+  ansible.builtin.get_url:
+    url: https://pkgs.tailscale.com/stable/debian/bookworm.noarmor.gpg
+    dest: /usr/share/keyrings/tailscale-archive-keyring.gpg
+    mode: '0644'
+
+- name: Configure Tailscale repository
+  ansible.builtin.copy:
+    content: >-
+      deb [signed-by=/usr/share/keyrings/tailscale-archive-keyring.gpg]
+      https://pkgs.tailscale.com/stable/debian bookworm main
+
+    dest: /etc/apt/sources.list.d/tailscale.list
+    owner: root
+    group: root
+    mode: '0644'
+  register: baseline_tailscale_repository
+
+- name: Install Tailscale
+  ansible.builtin.apt:
+    name: tailscale
+    state: present
+    update_cache: "{{ baseline_tailscale_repository.changed }}"
+
+- name: Maintain administrative account
+  ansible.builtin.user:
+    name: "{{ admin_user }}"
+    shell: /bin/bash
+    groups: sudo
+    append: true
+    create_home: true
+
+- name: Maintain deployment account
+  ansible.builtin.user:
+    name: "{{ deploy_user }}"
+    shell: /bin/bash
+    groups: docker
+    append: true
+    create_home: true
+
+- name: Create SSH directories
+  ansible.builtin.file:
+    path: "/home/{{ item }}/.ssh"
+    state: directory
+    owner: "{{ item }}"
+    group: "{{ item }}"
+    mode: '0700'
+  loop:
+    - "{{ admin_user }}"
+    - "{{ deploy_user }}"
+
+- name: Install administrative public keys
+  ansible.builtin.copy:
+    content: "{{ admin_public_keys | join('\n') }}\n"
+    dest: "/home/{{ admin_user }}/.ssh/authorized_keys"
+    owner: "{{ admin_user }}"
+    group: "{{ admin_user }}"
+    mode: '0600'
+
+- name: Install restricted deployment public key
+  ansible.builtin.copy:
+    content: "restrict {{ deploy_public_key }}\n"
+    dest: "/home/{{ deploy_user }}/.ssh/authorized_keys"
+    owner: "{{ deploy_user }}"
+    group: "{{ deploy_user }}"
+    mode: '0600'
+
+- name: Configure administrative sudo
+  ansible.builtin.copy:
+    content: "{{ admin_user }} ALL=(ALL:ALL) NOPASSWD: ALL\n"
+    dest: "/etc/sudoers.d/{{ admin_user }}"
+    owner: root
+    group: root
+    mode: '0440'
+    validate: visudo -cf %s
+
+- name: Create environment directories
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    owner: "{{ deploy_user }}"
+    group: "{{ deploy_user }}"
+    mode: '0700'
+  loop:
+    - "{{ environment_root }}"
+    - "{{ environment_root }}/releases"
+    - "{{ environment_root }}/bundles"
+    - "{{ environment_root }}/backups"
+
+- name: Record environment identity
+  ansible.builtin.template:
+    src: environment.j2
+    dest: /etc/auction/environment
+    owner: root
+    group: root
+    mode: '0644'
+
+- name: Configure host metric collector
+  ansible.builtin.copy:
+    content: "ARGS=\"--web.listen-address={{ node_exporter_address }}:9100\"\n"
+    dest: /etc/default/prometheus-node-exporter
+    owner: root
+    group: root
+    mode: '0644'
+  notify: Restart node exporter
+
+- name: Install SSH policy after key access has been verified
+  ansible.builtin.template:
+    src: sshd.conf.j2
+    dest: /etc/ssh/sshd_config.d/00-auction.conf
+    owner: root
+    group: root
+    mode: '0644'
+    validate: /usr/sbin/sshd -t -f %s
+  notify: Reload SSH
+
+- name: Install host firewall program
+  ansible.builtin.template:
+    src: auction-firewall.j2
+    dest: /usr/local/sbin/auction-firewall
+    owner: root
+    group: root
+    mode: '0755'
+    validate: /bin/sh -n %s
+  notify: Restart auction firewall
+
+- name: Install host firewall unit
+  ansible.builtin.copy:
+    src: auction-firewall.service
+    dest: /etc/systemd/system/auction-firewall.service
+    owner: root
+    group: root
+    mode: '0644'
+  notify: Restart auction firewall
+
+- name: Enable baseline services
+  ansible.builtin.systemd_service:
+    name: "{{ item }}"
+    enabled: true
+    state: started
+    daemon_reload: true
+  loop:
+    - ssh
+    - docker
+    - systemd-timesyncd
+    - tailscaled
+    - prometheus-node-exporter
+    - auction-firewall
+
+- name: Apply changed service settings
+  ansible.builtin.meta: flush_handlers
+
+- name: Verify Docker availability
+  ansible.builtin.command: docker info --format '{{ '{{' }}.ServerVersion{{ '}}' }}'
+  changed_when: false
+
+- name: Verify host metric collector
+  ansible.builtin.uri:
+    url: "http://{{ node_exporter_address }}:9100/metrics"
+    status_code: 200
+    return_content: false
