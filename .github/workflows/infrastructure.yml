@@ -26,11 +26,21 @@ jobs:
       - name: Check syntax and infrastructure rules
         run: make infra-check
       - name: Install virtual machine tools
-        run: sudo apt-get update && sudo apt-get install -y qemu-system-x86 qemu-utils cloud-image-utils acl
+        run: sudo apt-get update && sudo apt-get install -y qemu-system-x86 qemu-utils cloud-image-utils
+      - name: Check failed guest startup handling
+        run: python -m unittest discover -s infra/tests -p 'test_*.py'
       - name: Enable hardware virtualization for the current runner
         run: |
           if [ -e /dev/kvm ]; then
-            sudo setfacl -m "u:$(id -un):rw" /dev/kvm
+            runner_group="$(id -gn)"
+            # Keep access if udev recreates the device after the first guest starts.
+            printf 'KERNEL=="kvm", GROUP:="%s", MODE:="0660", OPTIONS+="static_node=kvm"\n' "$runner_group" |
+              sudo tee /etc/udev/rules.d/99-auction-kvm.rules >/dev/null
+            sudo udevadm control --reload-rules
+            sudo udevadm trigger --name-match=kvm
+            sudo udevadm settle --timeout=10
+            sudo chgrp "$runner_group" /dev/kvm
+            sudo chmod 0660 /dev/kvm
           fi
       - name: Configure two disposable Debian hosts and repair drift
         run: python infra/tests/rehearsal.py
