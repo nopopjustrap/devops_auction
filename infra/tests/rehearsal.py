@@ -156,6 +156,22 @@ def main():
                 )
                 (REPORTS / (label + ".log")).write_text(process.stdout)
                 print(process.stdout, flush=True)
+                if process.returncode:
+                    diagnostics = []
+                    for environment in ("test", "staging"):
+                        try:
+                            delivery = json.loads(ssh(
+                                environment, "sudo", "-n", "cat",
+                                f"/opt/auction-{environment}/last-result.json",
+                            ).stdout)
+                            diagnostics.append({
+                                "environment": environment,
+                                **{key: delivery[key] for key in ("status", "action", "error") if key in delivery},
+                            })
+                        except (subprocess.SubprocessError, ValueError):
+                            diagnostics.append({"environment": environment, "status": "diagnostics unavailable"})
+                    (REPORTS / (label + "-diagnostics.json")).write_text(json.dumps(diagnostics, indent=2) + "\n")
+                    print(json.dumps(diagnostics), flush=True)
                 process.check_returncode()
                 results[label] = recap(process.stdout)
                 return results[label]
