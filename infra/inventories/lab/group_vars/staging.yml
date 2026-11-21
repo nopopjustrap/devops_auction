@@ -1,0 +1,4 @@
+---
+environment_name: staging
+environment_root: /opt/auction-staging
+application_name: Auction staging

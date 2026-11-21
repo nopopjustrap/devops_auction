@@ -1,0 +1,13 @@
+[Unit]
+Description=Auction laboratory host INPUT firewall
+After=network-pre.target
+Before=network.target docker.service tailscaled.service
+Wants=network-pre.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/auction-firewall
+RemainAfterExit=yes
+
+[Install]
+WantedBy=multi-user.target

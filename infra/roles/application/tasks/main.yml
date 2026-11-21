@@ -1,0 +1,165 @@
+---
+- name: Create delivery tool directory
+  ansible.builtin.file:
+    path: /opt/auction-delivery
+    state: directory
+    owner: root
+    group: root
+    mode: '0755'
+
+- name: Install the repository delivery programs
+  ansible.builtin.copy:
+    src: "{{ playbook_dir }}/../scripts/{{ item }}"
+    dest: "/opt/auction-delivery/{{ item }}"
+    owner: root
+    group: root
+    mode: '0644'
+  loop:
+    - deploy.py
+    - release_check.py
+
+- name: Configure isolated application environment
+  ansible.builtin.template:
+    src: application.env.j2
+    dest: "{{ environment_root }}/staging.env"
+    owner: "{{ deploy_user }}"
+    group: "{{ deploy_user }}"
+    mode: '0600'
+  no_log: true
+  diff: false
+
+- name: Inspect accepted release state
+  ansible.builtin.stat:
+    path: "{{ environment_root }}/state.json"
+  register: application_state
+
+- name: Read accepted release state
+  ansible.builtin.slurp:
+    src: "{{ environment_root }}/state.json"
+  register: application_state_content
+  when: application_state.stat.exists
+
+- name: Read the active release configuration
+  ansible.builtin.slurp:
+    src: >-
+      {{ environment_root }}/releases/{{
+      (application_state_content.content | b64decode | from_json).current.id }}/staging.env
+  register: application_active_config
+  when: application_state.stat.exists
+  no_log: true
+
+# The delivery program validates the image revision, migrates a database copy
+# and accepts a real sale before committing the new release state.
+- name: Deploy when the revision or active configuration differs
+  ansible.builtin.command:
+    argv:
+      - python3
+      - /opt/auction-delivery/deploy.py
+      - deploy
+      - --root
+      - "{{ environment_root }}"
+      - --tag
+      - "sha-{{ application_revision }}"
+  become: true
+  become_user: "{{ deploy_user }}"
+  when: >-
+    not application_state.stat.exists or
+    (application_state_content.content | b64decode | from_json).current.sha != application_revision or
+    (application_active_config.content | b64decode) != lookup('ansible.builtin.template', 'application.env.j2')
+  changed_when: true
+  no_log: true
+
+- name: Obtain accepted container name
+  ansible.builtin.slurp:
+    src: "{{ environment_root }}/state.json"
+  register: application_accepted_state
+
+- name: Inspect application container
+  ansible.builtin.command:
+    argv:
+      - docker
+      - inspect
+      - "{{ (application_accepted_state.content | b64decode | from_json).current.container }}"
+  register: application_container
+  changed_when: false
+
+- name: Start a stopped application container
+  ansible.builtin.command:
+    argv:
+      - docker
+      - start
+      - "{{ (application_accepted_state.content | b64decode | from_json).current.container }}"
+  when: not (application_container.stdout | from_json)[0].State.Running
+  changed_when: true
+
+- name: Set application memory and CPU limits
+  ansible.builtin.command:
+    argv:
+      - docker
+      - update
+      - --memory
+      - "{{ application_memory | string }}"
+      - --memory-swap
+      - "{{ application_memory_swap | string }}"
+      - --cpus
+      - "{{ (application_cpus / 1000000000) | string }}"
+      - "{{ (application_accepted_state.content | b64decode | from_json).current.container }}"
+  when: >-
+    (application_container.stdout | from_json)[0].HostConfig.Memory != application_memory or
+    (application_container.stdout | from_json)[0].HostConfig.MemorySwap != application_memory_swap or
+    (application_container.stdout | from_json)[0].HostConfig.NanoCpus != application_cpus
+  changed_when: true
+
+- name: Verify application health and readiness
+  ansible.builtin.uri:
+    url: "http://127.0.0.1:{{ application_port }}/{{ item }}"
+    status_code: 200
+  loop:
+    - health
+    - ready
+  register: application_health
+  retries: 20
+  delay: 3
+  until: application_health.status == 200
+
+- name: Read running application version
+  ansible.builtin.uri:
+    url: "http://127.0.0.1:{{ application_port }}/version"
+    return_content: true
+  register: application_version
+
+- name: Require the requested release revision
+  ansible.builtin.assert:
+    that:
+      - application_version.json.revision == application_revision
+
+- name: Verify operator login
+  ansible.builtin.uri:
+    url: "http://127.0.0.1:{{ application_port }}/api/v1/auth/login"
+    method: POST
+    body_format: json
+    body:
+      username: "{{ operator_username }}"
+      password: "{{ operator_password }}"
+    status_code: 200
+  register: application_login
+  no_log: true
+
+- name: Verify the authenticated operator
+  block:
+    - name: Read the authenticated operator
+      ansible.builtin.uri:
+        url: "http://127.0.0.1:{{ application_port }}/api/v1/auth/me"
+        headers:
+          Cookie: "{{ application_login.cookies_string }}"
+        status_code: 200
+      no_log: true
+  always:
+    - name: Close the verification session
+      ansible.builtin.uri:
+        url: "http://127.0.0.1:{{ application_port }}/api/v1/auth/logout"
+        method: POST
+        headers:
+          Cookie: "{{ application_login.cookies_string }}"
+        status_code: 204
+      no_log: true

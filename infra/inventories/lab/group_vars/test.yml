@@ -1,0 +1,4 @@
+---
+environment_name: test
+environment_root: /opt/auction-test
+application_name: Auction test

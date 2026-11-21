@@ -1,0 +1,22 @@
+---
+admin_user: auction-admin
+ansible_user: auction-admin
+deploy_user: auction-deploy
+admin_public_keys:
+  - "{{ lookup('ansible.builtin.file', playbook_dir ~ '/files/admin.pub') }}"
+  - "{{ lookup('ansible.builtin.file', playbook_dir ~ '/files/controller.pub') }}"
+deploy_public_key: "{{ lookup('ansible.builtin.file', playbook_dir ~ '/files/deploy.pub') }}"
+host_timezone: Europe/Moscow
+firewall_ssh_sources:
+  - 10.0.2.0/24
+monitoring_source: 10.0.2.7/32
+node_exporter_address: "{{ ansible_host }}"
+docker_daemon_overrides: {}
+application_repository: ghcr.io/nopopjustrap/devops_auction
+application_revision: 1754b33b41b21ad0dca90a80ec4ef547ddb50c27
+application_port: 18000
+application_session_hours: 8
+application_memory: 268435456
+application_memory_swap: 402653184
+application_cpus: 500000000
+operator_username: release_operator

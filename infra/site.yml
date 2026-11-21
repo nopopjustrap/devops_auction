@@ -1,0 +1,27 @@
+---
+- name: Configure auction environments
+  hosts: auction
+  become: true
+  pre_tasks:
+    - name: Verify administrative access before restricting SSH
+      ansible.builtin.assert:
+        that:
+          - ansible_user == admin_user
+          - environment_name in ['test', 'staging', 'clean-check']
+          - environment_root is match('^/opt/auction-[a-z-]+$')
+          - application_revision is match('^[0-9a-f]{40}$')
+          - admin_public_keys | length > 0
+        fail_msg: Run bootstrap first, then connect with the administrative key.
+
+    - name: Create private credential storage on the controller
+      ansible.builtin.file:
+        path: "{{ secrets_directory }}"
+        state: directory
+        mode: '0700'
+      become: false
+      delegate_to: localhost
+      run_once: true
+
+  roles:
+    - baseline
+    - application
