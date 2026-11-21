@@ -111,7 +111,7 @@ def main():
                     "-drive", f"file={seed},if=virtio,format=raw,readonly=on",
                     "-netdev", f"user,id=network,hostfwd=tcp:127.0.0.1:{port}-:22",
                     "-device", "virtio-net-pci,netdev=network",
-                ], stdout=console, stderr=subprocess.STDOUT)
+                ], stdin=subprocess.DEVNULL, stdout=console, stderr=subprocess.STDOUT)
                 machines.append((process, console))
                 hosts["all"]["children"]["auction"]["children"][environment] = {
                     "hosts": {name: {"ansible_host": "127.0.0.1", "ansible_port": port}}
@@ -124,7 +124,8 @@ def main():
                     "-o", "IdentitiesOnly=yes", "-o", "BatchMode=yes",
                     "-o", "StrictHostKeyChecking=yes", "-o", f"UserKnownHostsFile={known_hosts}",
                     "-o", "ConnectTimeout=3", f"{user}@127.0.0.1", shlex.join(command),
-                ], text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=check, timeout=15)
+                ], stdin=subprocess.DEVNULL, text=True, stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE, check=check, timeout=15)
 
             for environment in ("test", "staging"):
                 for _ in range(180):
@@ -146,6 +147,7 @@ def main():
                     command.extend(["-e", "ansible_user=root"])
                 process = subprocess.run(
                     command, cwd=ROOT / "infra", text=True,
+                    stdin=subprocess.DEVNULL,
                     stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
                     env={**os.environ, "ANSIBLE_NOCOLOR": "1"},
                 )
