@@ -12,8 +12,10 @@
 /.gitleaks.toml @nopopjustrap @Shayrma749506887
 /.dockerignore @nopopjustrap @Shayrma749506887
 /.gitignore @nopopjustrap @Shayrma749506887
+/.gitattributes @nopopjustrap @Shayrma749506887
 /Dockerfile @nopopjustrap @Shayrma749506887
 /CONTRIBUTING.md @nopopjustrap @Shayrma749506887
 
 /deploy/ @nopopjustrap @Shayrma749506887
 /app/version.py @nopopjustrap @Shayrma749506887
+/infra/ @nopopjustrap @Shayrma749506887

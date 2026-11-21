@@ -39,6 +39,7 @@ mutation-check:
 # Recipes are explicitly sequential, including when the caller uses make -j.
 verify:
 	$(MAKE) policy-check
+	$(MAKE) infra-check
 	$(VENV_PYTHON) -m pip check
 	$(MAKE) quality
 	$(MAKE) security
@@ -88,3 +89,12 @@ container-scan:
 .PHONY: delivery-check
 delivery-check:
 	python3 scripts/delivery_demo.py
+
+.PHONY: infra-check infra-apply
+infra-check:
+	mkdir -p reports/infra
+	cd infra && ansible-playbook bootstrap.yml --syntax-check
+	cd infra && ansible-playbook site.yml --syntax-check
+	cd infra && ansible-lint --offline --profile production
+infra-apply:
+	cd infra && ansible-playbook site.yml $(if $(LIMIT),--limit "$(LIMIT)")

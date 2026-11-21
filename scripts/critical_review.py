@@ -10,6 +10,7 @@ PREFIXES = (
     "scripts/",
     "migrations/",
     "deploy/",
+    "infra/",
     ".github/",
     ".ci/",
     "requirements",
@@ -22,6 +23,7 @@ FILES = {
     "Dockerfile",
     ".dockerignore",
     ".gitignore",
+    ".gitattributes",
     ".gitleaks.toml",
     "CONTRIBUTING.md",
 }
