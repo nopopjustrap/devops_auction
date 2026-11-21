@@ -42,6 +42,8 @@ def main():
     REPORTS.mkdir(parents=True, exist_ok=True)
     results = {}
     machines = []
+    acceleration = "kvm" if os.access("/dev/kvm", os.W_OK) else "tcg"
+    print(f"Virtualization: {acceleration}", flush=True)
     cloud_url = "https://cloud.debian.org/images/cloud/bookworm/latest/"
     cloud_name = "debian-12-genericcloud-amd64.qcow2"
     with tempfile.TemporaryDirectory(prefix="auction-infra-") as directory:
@@ -105,7 +107,7 @@ def main():
                 run("qemu-img", "resize", str(disk), "12G")
                 console = (REPORTS / (environment + "-console.log")).open("w")
                 process = subprocess.Popen([
-                    "qemu-system-x86_64", "-accel", "kvm" if os.access("/dev/kvm", os.W_OK) else "tcg",
+                    "qemu-system-x86_64", "-accel", acceleration,
                     "-m", "1024", "-smp", "1", "-nographic", "-no-reboot",
                     "-drive", f"file={disk},if=virtio,format=qcow2",
                     "-drive", f"file={seed},if=virtio,format=raw,readonly=on",
@@ -138,6 +140,7 @@ def main():
             inventory_file.write_text(yaml.safe_dump(hosts))
 
             def apply(label, bootstrap=False):
+                print(f"Applying {label}", flush=True)
                 command = [
                     "ansible-playbook", "bootstrap.yml" if bootstrap else "site.yml",
                     "-i", str(inventory_file), "--private-key", str(key),
