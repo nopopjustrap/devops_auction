@@ -3,6 +3,7 @@
 import json
 import os
 import re
+import shlex
 import shutil
 import subprocess
 import tempfile
@@ -39,12 +40,12 @@ def recap(output):
 
 def main():
     REPORTS.mkdir(parents=True, exist_ok=True)
-    prefix = "auction-infra-" + uuid.uuid4().hex[:8]
-    image = prefix + ":debian12"
-    containers = []
     results = {}
-    with tempfile.TemporaryDirectory(prefix=prefix) as work:
-        work = Path(work)
+    machines = []
+    cloud_url = "https://cloud.debian.org/images/cloud/bookworm/latest/"
+    cloud_name = "debian-12-genericcloud-amd64.qcow2"
+    with tempfile.TemporaryDirectory(prefix="auction-infra-") as directory:
+        work = Path(directory)
         work.chmod(0o700)
         key = work / "admin"
         run("ssh-keygen", "-q", "-t", "ed25519", "-N", "", "-f", str(key))
@@ -57,51 +58,81 @@ def main():
             "admin_public_keys": [public_key],
             "deploy_public_key": public_key,
             "secrets_directory": str(work / "credentials"),
-            "firewall_ssh_sources": ["172.16.0.0/12"],
-            "monitoring_source": "172.16.0.0/12",
-            # Nested Docker uses vfs to avoid relying on nested overlay support.
-            "docker_daemon_overrides": {"storage-driver": "vfs"},
             "ansible_ssh_common_args": f"-o UserKnownHostsFile={known_hosts}",
         }
         (work / "overrides.json").write_text(json.dumps(overrides))
         try:
-            subprocess.run(
-                ["docker", "build", "-t", image, str(ROOT / "infra/tests")], check=True
+            base = work / cloud_name
+            run("curl", "--fail", "--location", "--retry", "3", "-o", str(base), cloud_url + cloud_name)
+            checksum_text = run("curl", "--fail", "--location", "--retry", "3", cloud_url + "SHA512SUMS")
+            expected = next(
+                line.split()[0] for line in checksum_text.splitlines()
+                if line.split()[-1].lstrip("*./") == cloud_name
             )
-            for environment in ("test", "staging"):
-                name = prefix + "-" + environment
-                containers.append(name)
-                # Privileged mode and cgroups are limited to these throwaway CI
-                # hosts; the application itself keeps its normal restrictions.
-                run(
-                    "docker", "run", "-d", "--name", name, "--privileged",
-                    "--cgroupns=host", "--tmpfs", "/run", "--tmpfs", "/run/lock",
-                    "--tmpfs", "/tmp", "-v", "/sys/fs/cgroup:/sys/fs/cgroup:rw",
-                    "-v", f"{key.with_suffix('.pub')}:/initial-key.pub:ro",
-                    image, "sh", "-c",
-                    "cp /initial-key.pub /root/.ssh/authorized_keys; "
-                    "chmod 600 /root/.ssh/authorized_keys; ssh-keygen -A; exec /sbin/init",
-                )
-                address = run(
-                    "docker", "inspect", "--format",
-                    "{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}", name
-                )
-                for _ in range(60):
-                    ready = subprocess.run(
-                        ["docker", "exec", name, "systemctl", "is-active", "ssh"],
-                        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
-                    )
-                    if ready.returncode == 0:
-                        break
-                    time.sleep(1)
-                else:
-                    raise RuntimeError(f"SSH did not start on {environment}")
-                host_key = run("docker", "exec", name, "cat", "/etc/ssh/ssh_host_ed25519_key.pub")
+            if run("sha512sum", str(base)).split()[0] != expected:
+                raise RuntimeError("Debian cloud image checksum mismatch")
+            results["debian_image_sha512"] = expected
+            for index, environment in enumerate(("test", "staging")):
+                name = "auction-" + environment
+                port = 22001 + index
+                disk = work / (environment + ".qcow2")
+                host_key = work / (environment + "-host-key")
+                run("ssh-keygen", "-q", "-t", "ed25519", "-N", "", "-f", str(host_key))
+                public_host_key = host_key.with_suffix(".pub").read_text().strip()
                 with known_hosts.open("a") as output:
-                    output.write(address + " " + " ".join(host_key.split()[:2]) + "\n")
+                    output.write(f"[127.0.0.1]:{port} " + " ".join(public_host_key.split()[:2]) + "\n")
+                user_data = work / (environment + "-user-data")
+                user_data.write_text("#cloud-config\n" + yaml.safe_dump({
+                    "hostname": name,
+                    "disable_root": False,
+                    "ssh_pwauth": False,
+                    "users": [{"name": "root", "ssh_authorized_keys": [public_key]}],
+                    "ssh_deletekeys": True,
+                    "ssh_keys": {
+                        "ed25519_private": host_key.read_text(),
+                        "ed25519_public": public_host_key,
+                    },
+                }))
+                user_data.chmod(0o600)
+                metadata = work / (environment + "-meta-data")
+                metadata.write_text(yaml.safe_dump({
+                    "instance-id": name + "-" + uuid.uuid4().hex,
+                    "local-hostname": name,
+                }))
+                seed = work / (environment + "-seed.img")
+                run("cloud-localds", str(seed), str(user_data), str(metadata))
+                run("qemu-img", "create", "-f", "qcow2", "-F", "qcow2", "-b", str(base), str(disk))
+                run("qemu-img", "resize", str(disk), "12G")
+                console = (REPORTS / (environment + "-console.log")).open("w")
+                process = subprocess.Popen([
+                    "qemu-system-x86_64", "-accel", "kvm" if os.access("/dev/kvm", os.W_OK) else "tcg",
+                    "-m", "1024", "-smp", "1", "-nographic", "-no-reboot",
+                    "-drive", f"file={disk},if=virtio,format=qcow2",
+                    "-drive", f"file={seed},if=virtio,format=raw,readonly=on",
+                    "-netdev", f"user,id=network,hostfwd=tcp:127.0.0.1:{port}-:22",
+                    "-device", "virtio-net-pci,netdev=network",
+                ], stdout=console, stderr=subprocess.STDOUT)
+                machines.append((process, console))
                 hosts["all"]["children"]["auction"]["children"][environment] = {
-                    "hosts": {"auction-" + environment: {"ansible_host": address}}
+                    "hosts": {name: {"ansible_host": "127.0.0.1", "ansible_port": port}}
                 }
+
+            def ssh(environment, *command, user="auction-admin", check=True):
+                port = 22001 if environment == "test" else 22002
+                return subprocess.run([
+                    "ssh", "-F", "/dev/null", "-i", str(key), "-p", str(port),
+                    "-o", "IdentitiesOnly=yes", "-o", "BatchMode=yes",
+                    "-o", "StrictHostKeyChecking=yes", "-o", f"UserKnownHostsFile={known_hosts}",
+                    "-o", "ConnectTimeout=3", f"{user}@127.0.0.1", shlex.join(command),
+                ], text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=check, timeout=15)
+
+            for environment in ("test", "staging"):
+                for _ in range(180):
+                    if ssh(environment, "test", "-f", "/var/lib/cloud/instance/boot-finished", user="root", check=False).returncode == 0:
+                        break
+                    time.sleep(2)
+                else:
+                    raise RuntimeError(f"Debian did not become ready: {environment}")
             inventory_file = inventory / "hosts.yml"
             inventory_file.write_text(yaml.safe_dump(hosts))
 
@@ -129,20 +160,16 @@ def main():
             second = apply("repeat")
             if any(host["changed"] for host in second.values()):
                 raise RuntimeError("A repeat run changed the desired state")
-            target = containers[0]
-            state = json.loads(run("docker", "exec", target, "cat", "/opt/auction-test/state.json"))
-            run(
-                "docker", "exec", target, "sh", "-c",
-                "printf 'ENVIRONMENT=broken\\n' > /etc/auction/environment; "
-                "chmod 777 /opt/auction-test",
-            )
-            run("docker", "exec", target, "docker", "stop", state["current"]["container"])
+            state = json.loads(ssh("test", "sudo", "-n", "cat", "/opt/auction-test/state.json").stdout)
+            ssh("test", "sudo", "-n", "sh", "-c",
+                "printf 'ENVIRONMENT=broken\\n' > /etc/auction/environment; chmod 777 /opt/auction-test")
+            ssh("test", "sudo", "-n", "docker", "stop", state["current"]["container"])
             repair = apply("repair")
             if repair["auction-test"]["changed"] == 0 or repair["auction-staging"]["changed"]:
                 raise RuntimeError("Drift repair must change only the affected host")
-            if run("docker", "exec", target, "stat", "-c", "%a", "/opt/auction-test") != "700":
+            if ssh("test", "sudo", "-n", "stat", "-c", "%a", "/opt/auction-test").stdout.strip() != "700":
                 raise RuntimeError("Directory permissions were not restored")
-            if "ENVIRONMENT=test" not in run("docker", "exec", target, "cat", "/etc/auction/environment"):
+            if "ENVIRONMENT=test" not in ssh("test", "cat", "/etc/auction/environment").stdout:
                 raise RuntimeError("Environment configuration was not restored")
             final = apply("final")
             if any(host["changed"] for host in final.values()):
@@ -151,9 +178,14 @@ def main():
             print("Two Debian environments, repeat run and drift repair: passed")
         finally:
             (REPORTS / "summary.json").write_text(json.dumps(results, indent=2) + "\n")
-            for name in containers:
-                subprocess.run(["docker", "rm", "-fv", name], check=False)
-            subprocess.run(["docker", "image", "rm", image], check=False)
+            for process, console in machines:
+                process.terminate()
+                try:
+                    process.wait(timeout=10)
+                except subprocess.TimeoutExpired:
+                    process.kill()
+                    process.wait(timeout=5)
+                console.close()
 
 
 if __name__ == "__main__":
