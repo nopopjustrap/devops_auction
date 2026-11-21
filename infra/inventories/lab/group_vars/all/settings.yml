@@ -14,7 +14,6 @@ node_exporter_address: "{{ ansible_host }}"
 docker_daemon_overrides: {}
 application_repository: ghcr.io/nopopjustrap/devops_auction
 application_revision: 1754b33b41b21ad0dca90a80ec4ef547ddb50c27
-application_upgrade: false
 application_port: 18000
 application_session_hours: 8
 application_memory: 268435456

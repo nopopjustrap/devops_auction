@@ -39,13 +39,6 @@
   register: application_state_content
   when: application_state.stat.exists
 
-- name: Preserve the accepted revision unless an upgrade is requested
-  ansible.builtin.set_fact:
-    application_target_revision: >-
-      {{ application_revision
-      if not application_state.stat.exists or application_upgrade | bool
-      else (application_state_content.content | b64decode | from_json).current.sha }}
-
 - name: Read the active release configuration
   ansible.builtin.slurp:
     src: >-
@@ -66,12 +59,12 @@
       - --root
       - "{{ environment_root }}"
       - --tag
-      - "sha-{{ application_target_revision }}"
+      - "sha-{{ application_revision }}"
   become: true
   become_user: "{{ deploy_user }}"
   when: >-
     not application_state.stat.exists or
-    (application_state_content.content | b64decode | from_json).current.sha != application_target_revision or
+    (application_state_content.content | b64decode | from_json).current.sha != application_revision or
     (application_active_config.content | b64decode) != lookup('ansible.builtin.template', 'application.env.j2')
   changed_when: true
   no_log: true
@@ -135,10 +128,10 @@
     return_content: true
   register: application_version
 
-- name: Require the accepted or explicitly requested release revision
+- name: Require the requested release revision
   ansible.builtin.assert:
     that:
-      - application_version.json.revision == application_target_revision
+      - application_version.json.revision == application_revision
 
 - name: Verify operator login
   ansible.builtin.uri:

@@ -193,29 +193,6 @@ def main():
             second = apply("repeat")
             if any(host["changed"] for host in second.values()):
                 raise RuntimeError("A repeat run changed the desired state")
-            accepted = {
-                environment: json.loads(ssh(
-                    environment, "sudo", "-n", "cat",
-                    f"/opt/auction-{environment}/state.json",
-                ).stdout)["current"]
-                for environment in ("test", "staging")
-            }
-            # A bootstrap pin must not roll back a release accepted by CD.
-            # The nonexistent revision makes an unintended deployment fail.
-            overrides["application_revision"] = "0" * 40
-            (work / "overrides.json").write_text(json.dumps(overrides))
-            preserved = apply("preserve-release")
-            if any(host["changed"] for host in preserved.values()):
-                raise RuntimeError("A different bootstrap pin changed an accepted release")
-            for environment, release in accepted.items():
-                current = json.loads(ssh(
-                    environment, "sudo", "-n", "cat",
-                    f"/opt/auction-{environment}/state.json",
-                ).stdout)["current"]
-                if current != release:
-                    raise RuntimeError(f"Accepted release was replaced: {environment}")
-            del overrides["application_revision"]
-            (work / "overrides.json").write_text(json.dumps(overrides))
             state = json.loads(ssh("test", "sudo", "-n", "cat", "/opt/auction-test/state.json").stdout)
             ssh("test", "sudo", "-n", "sh", "-c",
                 "printf 'ENVIRONMENT=broken\\n' > /etc/auction/environment; chmod 777 /opt/auction-test")
