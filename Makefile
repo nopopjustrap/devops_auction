@@ -1,3 +1,4 @@
+# Changes to acceptance commands require independent CODEOWNER review.
 PYTHON ?= python3
 VENV := .venv
 VENV_PYTHON := $(VENV)/bin/python
